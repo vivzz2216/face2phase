@@ -1,0 +1,118 @@
+.video-player-container {
+  width: 100%;
+  max-width: min(960px, 92vw);
+  margin: 0 auto;
+  background: var(--bg-card);
+  border-radius: 14px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+  aspect-ratio: 16 / 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-element {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #000;
+  cursor: pointer;
+  object-fit: contain;
+}
+
+.video-controls {
+  background: rgba(0, 0, 0, 0.8);
+  padding: 0.75rem;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.video-player-container:hover .video-controls {
+  opacity: 1;
+}
+
+.controls-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.375rem;
+}
+
+.control-btn {
+  background: transparent;
+  border: none;
+  color: white;
+  cursor: pointer;
+  padding: 0.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 0.2s;
+  font-size: 0.85rem;
+}
+
+.control-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.volume-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: white;
+}
+
+.volume-slider {
+  width: 80px;
+}
+
+.time-display {
+  color: white;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.speed-control {
+  margin-left: auto;
+}
+
+.speed-select {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+  cursor: pointer;
+  position: relative;
+}
+
+.progress-bar {
+  height: 100%;
+  background: var(--accent-primary);
+  border-radius: 3px;
+  transition: width 0.1s;
+}
+
+@media (max-width: 768px) {
+  .video-player-container {
+    max-width: 100%;
+    border-radius: 12px;
+  }
+}
+

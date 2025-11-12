@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AI Coaching Report</title>
+  <style>
+    @page { size: A4; margin: 20mm 18mm; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      margin: 0;
+      color: #0f172a;
+      background: #f8fafc;
+      font-size: 11.5px;
+    }
+    h1, h2, h3 { margin: 0; color: #111827; }
+    .report { display: flex; flex-direction: column; gap: 16px; }
+    .header {
+      display: flex;
+      gap: 18px;
+      flex-wrap: wrap;
+      background: linear-gradient(140deg, #1e3a8a, #6366f1);
+      color: white;
+      padding: 18px 20px;
+      border-radius: 14px;
+    }
+    .identity {
+      flex: 1 1 260px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .identity h1 { font-size: 20px; font-weight: 700; }
+    .identity p { margin: 0; font-size: 11px; opacity: 0.9; }
+    .identity-table { display: grid; gap: 4px; font-size: 11px; }
+    .identity-row { display: flex; gap: 6px; align-items: baseline; }
+    .identity-row span:first-child { font-weight: 600; width: 90px; opacity: 0.85; }
+    .video-card {
+      width: 180px;
+      border-radius: 10px;
+      overflow: hidden;
+      background: rgba(255,255,255,0.12);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 10px;
+      font-size: 10.5px;
+    }
+    .video-card img {
+      width: 100%;
+      height: 100px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.25);
+    }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 16px 18px;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+    }
+    .card h2 {
+      font-size: 15px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #1e293b;
+    }
+    .score-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .score-tile {
+      border: 1px solid rgba(79, 70, 229, 0.18);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: rgba(99, 102, 241, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .score-tile span.label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #4338ca;
+    }
+    .score-tile span.value {
+      font-size: 16px;
+      font-weight: 700;
+      color: #1f2937;
+    }
+    .score-tile span.comment {
+      font-size: 10.5px;
+      color: #475569;
+    }
+    .two-column {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    ul.strength-list, ul.growth-list {
+      margin: 0;
+      padding-left: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      color: #334155;
+    }
+    .summary-text {
+      font-size: 11.5px;
+      line-height: 1.5;
+      color: #1e293b;
+    }
+    table.metrics-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+    table.metrics-table th {
+      text-align: left;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 10px;
+      color: #475569;
+      padding-bottom: 6px;
+    }
+    table.metrics-table td {
+      padding: 6px 0;
+      border-bottom: 1px dashed rgba(148, 163, 184, 0.35);
+      color: #1e293b;
+      vertical-align: top;
+    }
+    table.metrics-table td.comment {
+      color: #475569;
+    }
+    .transcript {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 10.5px;
+      color: #374151;
+    }
+    .transcript-row {
+      display: grid;
+      grid-template-columns: 48px 1fr;
+      gap: 10px;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(226, 232, 240, 0.7);
+    }
+    .transcript-row span.time {
+      font-weight: 600;
+      color: #1e3a8a;
+    }
+    .notes-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      font-size: 10.5px;
+      color: #0f172a;
+    }
+    .note-card {
+      background: rgba(59, 130, 246, 0.08);
+      border: 1px solid rgba(59, 130, 246, 0.22);
+      border-radius: 10px;
+      padding: 10px 12px;
+      line-height: 1.4;
+    }
+    .visual-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      font-size: 10.5px;
+    }
+    .visual-card {
+      border: 1px solid rgba(14, 116, 144, 0.25);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: rgba(13, 148, 136, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .follow-up-list {
+      margin: 0;
+      padding-left: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      color: #334155;
+    }
+    .footer {
+      margin-top: 6px;
+      text-align: center;
+      font-size: 9.5px;
+      color: #94a3b8;
+      letter-spacing: 0.02em;
+    }
+  </style>
+</head>
+<body>
+  <div class="report">
+
+    <!-- Header -->
+    <div class="header">
+      <div class="identity">
+        <h1>{{ brand.title }}</h1>
+        <p>{{ brand.subtitle }}</p>
+        <div class="identity-table">
+          <div class="identity-row">
+            <span>Participant</span>
+            <span>{{ header.participant }}</span>
+          </div>
+          <div class="identity-row">
+            <span>Session ID</span>
+            <span>{{ header.session_id }}</span>
+          </div>
+          <div class="identity-row">
+            <span>Date / Time</span>
+            <span>{{ header.datetime }}</span>
+          </div>
+          {% if header.email %}
+          <div class="identity-row">
+            <span>Email</span>
+            <span>{{ header.email }}</span>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      <div class="video-card">
+        {% if video.thumbnail %}
+          <img src="{{ video.thumbnail }}" alt="Session preview">
+        {% else %}
+          <div style="height:100px;width:100%;border-radius:6px;background:rgba(255,255,255,0.18);display:flex;align-items:center;justify-content:center;font-size:10px;">
+            Session Preview
+          </div>
+        {% endif %}
+        <div style="text-align:center;line-height:1.4;">
+          <strong>{{ video.title or 'Recorded Session' }}</strong><br>
+          {% if video.duration %}<span>{{ video.duration }} duration</span><br>{% endif %}
+          <span style="opacity:0.8;">AI Coaching Report</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Performance Overview -->
+    <div class="card">
+      <h2>Performance Overview</h2>
+      <div class="score-grid">
+        {% for metric in performance %}
+        <div class="score-tile">
+          <span class="label">{{ metric.label }}</span>
+          <span class="value">{{ metric.value }}</span>
+          {% if metric.comment %}
+          <span class="comment">{{ metric.comment }}</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Strengths / Growth -->
+    <div class="card">
+      <div class="two-column">
+        <div>
+          <h2>Strengths</h2>
+          <ul class="strength-list">
+            {% for item in strengths %}
+            <li>{{ item }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        <div>
+          <h2>Growth Areas</h2>
+          <ul class="growth-list">
+            {% for item in improvements %}
+            <li>{{ item }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Summary -->
+    {% if summary_text %}
+    <div class="card">
+      <h2>Summary Insights</h2>
+      <p class="summary-text">{{ summary_text }}</p>
+    </div>
+    {% endif %}
+
+    <!-- Detailed Metrics -->
+    <div class="card">
+      <h2>Detailed Metrics</h2>
+      <table class="metrics-table">
+        <thead>
+          <tr>
+            <th style="width:150px;">Category</th>
+            <th style="width:110px;">Value</th>
+            <th>Comment</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in metrics_table %}
+          <tr>
+            <td>{{ row.category }}</td>
+            <td>{{ row.value }}</td>
+            <td class="comment">{{ row.comment }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Transcript Snippets -->
+    {% if transcript %}
+    <div class="card">
+      <h2>Transcript Highlights</h2>
+      <div class="transcript">
+        {% for line in transcript %}
+        <div class="transcript-row">
+          <span class="time">{{ line.time }}</span>
+          <span>{{ line.text }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Notes -->
+    <div class="card">
+      <h2>Pronunciation & Tone Notes</h2>
+      <div class="notes-grid">
+        <div class="note-card">
+          <strong>Pronunciation</strong><br>
+          {{ notes.pronunciation }}
+        </div>
+        <div class="note-card">
+          <strong>Emotional Tone</strong><br>
+          {{ notes.emotion }}
+        </div>
+      </div>
+    </div>
+
+    <!-- Visual Feedback -->
+    <div class="card">
+      <h2>Visual Feedback</h2>
+      <div class="visual-grid">
+        <div class="visual-card">
+          <strong>Eye Contact</strong>
+          <span>{{ visual_highlights.eye_contact }}</span>
+          <span style="font-size:10px;opacity:0.85;">Aim above 70% for executive presence.</span>
+        </div>
+        <div class="visual-card">
+          <strong>Tension</strong>
+          <span>{{ visual_highlights.tension }}</span>
+          <span style="font-size:10px;opacity:0.85;">Reset posture between sections.</span>
+        </div>
+        <div class="visual-card">
+          <strong>Dominant Emotion</strong>
+          <span>{{ visual_highlights.emotion }}</span>
+          <span style="font-size:10px;opacity:0.85;">Balance energy with calm breathing.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Follow-up Questions -->
+    <div class="card">
+      <h2>Follow-up Questions</h2>
+      <ul class="follow-up-list">
+        {% for question in follow_up_questions %}
+        <li>{{ question }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <div class="footer">
+      Generated by Face2Phase • AI Communication Intelligence Platform • {{ generated_at }}
+    </div>
+  </div>
+</body>
+</html>
+

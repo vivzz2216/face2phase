@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face2Phrase - Processing</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎤 Face2Phrase</h1>
+            <p class="subtitle">Processing Your Recording</p>
+        </header>
+
+        <main>
+            <div class="processing-section">
+                <div class="processing-animation">
+                    <div class="spinner"></div>
+                </div>
+                
+                <h2>Analyzing Your Communication</h2>
+                <p class="processing-description">
+                    We're analyzing your recording using AI models running locally on your device.
+                    This may take a few minutes depending on the file size and your hardware.
+                </p>
+
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill" style="width: {{ progress }}%"></div>
+                    </div>
+                    <div class="progress-text" id="progressText">{{ progress }}% Complete</div>
+                </div>
+
+                <div class="processing-steps">
+                    <div class="step" id="step1">
+                        <span class="step-icon">🎵</span>
+                        <span class="step-text">Extracting Audio Features</span>
+                    </div>
+                    <div class="step" id="step2">
+                        <span class="step-icon">🎭</span>
+                        <span class="step-text">Analyzing Facial Expressions</span>
+                    </div>
+                    <div class="step" id="step3">
+                        <span class="step-icon">📝</span>
+                        <span class="step-text">Processing Text & Vocabulary</span>
+                    </div>
+                    <div class="step" id="step4">
+                        <span class="step-icon">📊</span>
+                        <span class="step-text">Generating Report</span>
+                    </div>
+                </div>
+
+                <div class="session-info">
+                    <p>Session ID: <code>{{ session_id }}</code></p>
+                    <p class="note">You can bookmark this page to check back later.</p>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Face2Phrase - Privacy-friendly AI communication analysis</p>
+        </footer>
+    </div>
+
+    <script>
+        const sessionId = '{{ session_id }}';
+        
+        // Poll for status updates
+        function checkStatus() {
+            fetch(`/status/${sessionId}`)
+                .then(response => response.json())
+                .then(data => {
+                    const progress = data.progress || 0;
+                    document.getElementById('progressFill').style.width = progress + '%';
+                    document.getElementById('progressText').textContent = progress + '% Complete';
+                    
+                    // Update step indicators
+                    updateSteps(progress);
+                    
+                    if (data.status === 'completed') {
+                        window.location.href = `/report/${sessionId}`;
+                    } else if (data.status === 'error') {
+                        alert('Processing failed: ' + (data.error || 'Unknown error'));
+                        window.location.href = '/';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking status:', error);
+                });
+        }
+        
+        function updateSteps(progress) {
+            const steps = document.querySelectorAll('.step');
+            steps.forEach((step, index) => {
+                const stepProgress = (index + 1) * 25;
+                if (progress >= stepProgress) {
+                    step.classList.add('completed');
+                }
+            });
+        }
+        
+        // Check status every 2 seconds
+        setInterval(checkStatus, 2000);
+        
+        // Initial check
+        checkStatus();
+    </script>
+</body>
+</html>
