@@ -32,12 +32,52 @@ const Dashboard = () => {
   const [selectedSessions, setSelectedSessions] = useState([])
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const fileInputRef = useRef(null)
+  const mediaRecorderRef = useRef(null)
+  const recordedChunksRef = useRef([])
+  const recordingTimerRef = useRef(null)
+  const componentActiveRef = useRef(true)
+  const discardRecordingRef = useRef(false)
+  const previewVideoRef = useRef(null)
   const isBrowser = typeof window !== 'undefined'
   const [isGuest, setIsGuest] = useState(!user)
+  const [supportsRecording, setSupportsRecording] = useState(false)
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordingType, setRecordingType] = useState(null)
+  const [recordingError, setRecordingError] = useState('')
+  const [recordingDuration, setRecordingDuration] = useState(0)
+  const [previewStream, setPreviewStream] = useState(null)
 
   useEffect(() => {
     setIsGuest(!user)
   }, [user])
+
+  useEffect(() => {
+    componentActiveRef.current = true
+    if (typeof window !== 'undefined' && navigator?.mediaDevices && typeof window.MediaRecorder !== 'undefined') {
+      setSupportsRecording(true)
+    }
+    return () => {
+      componentActiveRef.current = false
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current)
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop()
+      }
+      setPreviewStream(null)
+    }
+  }, [])
+
+  useEffect(() => {
+    const videoEl = previewVideoRef.current
+    if (!videoEl) return
+    if (previewStream) {
+      videoEl.srcObject = previewStream
+      videoEl.play?.().catch(() => {})
+    } else {
+      videoEl.srcObject = null
+    }
+  }, [previewStream])
 
   const normalizeSummary = useCallback((session) => {
     if (!session) return null
@@ -271,9 +311,10 @@ const Dashboard = () => {
     if (!user) {
       setLoadingHistory(true)
       syncGuestHistoryFromStorage()
-      return
+      return []
     }
 
+    const normalizedSessions = []
     try {
       setLoadingHistory(true)
       const sessionsRequestPayload = {
@@ -282,9 +323,8 @@ const Dashboard = () => {
         display_name: user.displayName || null
       }
 
-      const normalizedSessions = []
-
       try {
+        console.debug('[History] Requesting Firebase sessions', sessionsRequestPayload)
         const sessionResponse = await fetch(`${API_BASE_URL}/api/firebase/sessions?limit=100`, {
         method: 'POST',
         headers: {
@@ -295,21 +335,25 @@ const Dashboard = () => {
 
         if (sessionResponse.ok) {
           const data = await sessionResponse.json()
+          console.debug('[History] Firebase sessions response', data)
           const sessionList = Array.isArray(data.sessions) ? data.sessions : []
           sessionList.forEach((session) => {
             const normalized = normalizeSummary(session)
             if (normalized) normalizedSessions.push(normalized)
           })
         } else {
-          const detail = await sessionResponse.text().catch(() => '')
-          console.warn('Session summaries request failed:', sessionResponse.status, detail)
+          const detailText = await sessionResponse.text().catch(() => '')
+          console.warn('[History] Firebase sessions request failed', sessionResponse.status, detailText)
+          console.warn('Session summaries request failed:', sessionResponse.status, detailText)
         }
       } catch (sessionError) {
+        console.error('[History] Firebase sessions request error', sessionError)
         console.warn('Session summary endpoint unavailable, falling back to legacy analyses.', sessionError)
       }
 
       if (normalizedSessions.length === 0) {
         try {
+          console.debug('[History] Requesting legacy analyses', sessionsRequestPayload)
           const legacyResponse = await fetch(`${API_BASE_URL}/api/firebase/analyses?limit=1000`, {
             method: 'POST',
             headers: {
@@ -320,16 +364,19 @@ const Dashboard = () => {
       
           if (legacyResponse.ok) {
             const legacyData = await legacyResponse.json()
+            console.debug('[History] Legacy analyses response', legacyData)
             const legacyList = Array.isArray(legacyData.analyses) ? legacyData.analyses : []
             legacyList.forEach((analysis) => {
               const normalizedLegacy = normalizeLegacyAnalysis(analysis)
               if (normalizedLegacy) normalizedSessions.push(normalizedLegacy)
             })
           } else {
-            const detail = await legacyResponse.text().catch(() => '')
-            console.warn('Legacy analyses request failed:', legacyResponse.status, detail)
+            const detailText = await legacyResponse.text().catch(() => '')
+            console.warn('[History] Legacy analyses request failed', legacyResponse.status, detailText)
+            console.warn('Legacy analyses request failed:', legacyResponse.status, detailText)
           }
         } catch (legacyError) {
+          console.error('[History] Legacy analyses request error', legacyError)
           console.warn('Legacy analyses endpoint unavailable.', legacyError)
         }
       }
@@ -348,9 +395,10 @@ const Dashboard = () => {
         const validIds = new Set(normalizedSessions.map((session) => session.session_id))
         return prev.filter((session) => validIds.has(session.session_id))
       })
+      return normalizedSessions
     } catch (error) {
-      console.error('Error loading analysis history:', error)
-      setAnalysisHistory([])
+      console.error('[History] Unexpected error loading analysis history:', error)
+      return null
     } finally {
       setLoadingHistory(false)
     }
@@ -363,6 +411,13 @@ const Dashboard = () => {
   }, [loading, loadAnalysisHistory])
 
   const handleFileChange = (e) => {
+    if (isRecording) {
+      discardRecordingRef.current = true
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop()
+      }
+    }
+    setPreviewStream(null)
     const selectedFile = e.target.files[0]
     setFile(selectedFile)
     if (selectedFile) {
@@ -377,34 +432,212 @@ const Dashboard = () => {
     }
   }
 
-  const uploadFile = async (nameOverride) => {
-    if (!file) {
+  const pickMimeType = (type) => {
+    if (typeof window === 'undefined' || !window.MediaRecorder) return undefined
+    const candidates = type === 'video'
+      ? [
+          'video/webm;codecs=vp8,opus',
+          'video/webm;codecs=vp9,opus',
+          'video/webm'
+        ]
+      : ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus']
+    return candidates.find((candidate) => window.MediaRecorder.isTypeSupported(candidate))
+  }
+
+  const cleanupRecordingState = () => {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current)
+      recordingTimerRef.current = null
+    }
+    setIsRecording(false)
+    setRecordingType(null)
+    setRecordingDuration(0)
+    discardRecordingRef.current = false
+    setPreviewStream(null)
+  }
+
+  const stopStreamTracks = (stream) => {
+    if (stream) {
+      stream.getTracks().forEach((track) => {
+        try {
+          track.stop()
+        } catch (err) {
+          // ignore
+        }
+      })
+    }
+  }
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop()
+    }
+  }, [])
+
+  const cancelRecording = () => {
+    if (!isRecording) return
+    discardRecordingRef.current = true
+    stopRecording()
+  }
+
+  const startRecording = async (type) => {
+    if (!supportsRecording || isRecording || processing) return
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      setRecordingError('Media recording is not supported in this browser.')
+      return
+    }
+    try {
+      setRecordingError('')
+      setFile(null)
+      setProjectName('')
+      setProjectNameDraft('')
+      setProjectNameError('')
+      setShowProjectModal(false)
+      const videoConstraints = type === 'video'
+        ? { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
+        : false
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+        video: videoConstraints
+      })
+
+      if (type === 'video' && stream.getAudioTracks().length === 0) {
+        try {
+          const audioFallback = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true }
+          })
+          audioFallback.getAudioTracks().forEach((track) => stream.addTrack(track))
+        } catch (audioError) {
+          setRecordingError('Microphone access unavailable; video audio may be missing.')
+        }
+      }
+
+      const mimeType = pickMimeType(type)
+      const recorderOptions = {}
+      if (mimeType) {
+        recorderOptions.mimeType = mimeType
+      }
+      if (type === 'video') {
+        recorderOptions.audioBitsPerSecond = 128000
+        recorderOptions.videoBitsPerSecond = 2_500_000
+      } else {
+        recorderOptions.audioBitsPerSecond = 128000
+      }
+
+      let recorder
+      try {
+        recorder = Object.keys(recorderOptions).length
+          ? new MediaRecorder(stream, recorderOptions)
+          : new MediaRecorder(stream)
+      } catch (optionError) {
+        recorder = new MediaRecorder(stream)
+      }
+      mediaRecorderRef.current = recorder
+      recordedChunksRef.current = []
+      discardRecordingRef.current = false
+      setRecordingType(type)
+      setIsRecording(true)
+      setRecordingDuration(0)
+      if (type === 'video') {
+        const videoOnlyStream = new MediaStream(stream.getVideoTracks())
+        setPreviewStream(videoOnlyStream)
+      } else {
+        setPreviewStream(null)
+      }
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration((prev) => prev + 1)
+      }, 1000)
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordedChunksRef.current.push(event.data)
+        }
+      }
+
+      recorder.onstop = () => {
+        stopStreamTracks(stream)
+        const isActive = componentActiveRef.current
+        const shouldDiscard = discardRecordingRef.current
+        const chunks = recordedChunksRef.current.slice()
+        recordedChunksRef.current = []
+        cleanupRecordingState()
+        if (!isActive || shouldDiscard || chunks.length === 0) {
+          return
+        }
+
+        const blobType = recorder.mimeType || mimeType || (type === 'video' ? 'video/webm' : 'audio/webm')
+        const blob = new Blob(chunks, { type: blobType })
+        const extension = blobType.includes('video') ? 'webm' : 'webm'
+        const recordedFile = new File(
+          [blob],
+          `face2phase-${type}-recording-${Date.now()}.${extension}`,
+          { type: blob.type }
+        )
+        if (!componentActiveRef.current) {
+          return
+        }
+        setFile(recordedFile)
+        const defaultName = deriveDefaultProjectName(recordedFile.name)
+        setProjectName(defaultName)
+        setProjectNameDraft(defaultName)
+        setProjectNameError('')
+        if (fileInputRef.current) {
+          fileInputRef.current.value = ''
+        }
+        uploadFile(defaultName, recordedFile)
+      }
+
+      recorder.onerror = (event) => {
+        stopStreamTracks(stream)
+        cleanupRecordingState()
+        if (componentActiveRef.current) {
+          setRecordingError(event.error?.message || 'Failed to record media.')
+        }
+      }
+
+      recorder.start()
+    } catch (error) {
+      cleanupRecordingState()
+      setRecordingError(error?.message || 'Unable to access microphone/camera.')
+    }
+  }
+
+  const formatRecordingTime = (seconds) => {
+    const mins = Math.floor(seconds / 60).toString().padStart(2, '0')
+    const secs = Math.floor(seconds % 60).toString().padStart(2, '0')
+    return `${mins}:${secs}`
+  }
+
+  const uploadFile = async (nameOverride, fileOverride = null) => {
+    const uploadSource = fileOverride ?? file
+    if (!uploadSource) {
       alert('Please select a file first')
       return
     }
 
-    const projectLabel = ((nameOverride ?? projectName ?? deriveDefaultProjectName(file?.name || '')) || '').trim()
+    const projectLabel = ((nameOverride ?? projectName ?? deriveDefaultProjectName(uploadSource?.name || '')) || '').trim()
     if (!projectLabel) {
       openProjectModal()
       return
     }
 
     setProjectName(projectLabel)
+    setProjectNameDraft(projectLabel)
     setProcessing(true)
     setProgress(0)
 
     try {
       const formData = new FormData()
-      formData.append('file', file)
+      formData.append('file', uploadSource)
       if (projectLabel) {
         formData.append('project_name', projectLabel)
       }
       
       // Add user info if logged in
       if (user) {
-        formData.append('user_email', user.email || '')
-        formData.append('user_uid', user.uid || '')
-        formData.append('user_display_name', user.displayName || '')
+      formData.append('email', user.email || '')
+      formData.append('uid', user.uid || '')
+      formData.append('display_name', user.displayName || '')
       }
 
       const uploadResponse = await fetch(`${API_BASE_URL}/upload`, {
@@ -461,59 +694,69 @@ const Dashboard = () => {
             clearInterval(progressInterval)
             setProcessing(false)
             
-            if (!user) {
-              const finalReport = progressData.report || {}
-              const sessionStub = {
-                session_id: uploadData.session_id,
-                project_name: projectLabel,
-                title: projectLabel,
-                file_name: projectLabel || file?.name,
-                original_file_name: file?.name || null,
-                file_type:
-                  finalReport.file_type ||
-                  uploadData.file_type ||
-                  (file?.type?.startsWith('video') ? 'video' : file?.type?.startsWith('audio') ? 'audio' : null),
-                overall_score: finalReport.overall_score,
-                score_breakdown: {
-                  voice_confidence: finalReport.voice_confidence,
-                  facial_confidence: finalReport.facial_confidence,
-                  vocabulary_score: finalReport.vocabulary_score
-                },
-                metrics: {
-                  duration_seconds:
-                    finalReport.speaking_metrics?.total_duration ??
-                    finalReport.total_duration ??
-                    finalReport.metrics?.duration_seconds ??
-                    null,
-                  total_duration:
-                    finalReport.speaking_metrics?.total_duration ??
-                    finalReport.total_duration ??
-                    finalReport.metrics?.total_duration ??
-                    null,
-                  pacing_score: finalReport.speaking_rate_wpm,
-                  speaking_rate_wpm: finalReport.speaking_rate_wpm,
-                  total_words:
-                    finalReport.total_words ??
-                    finalReport.speaking_metrics?.total_words ??
-                    finalReport.metrics?.total_words ??
-                    null,
-                  filler_ratio: finalReport.filler_word_ratio,
-                  filler_percentage:
-                    typeof finalReport.filler_word_ratio === 'number'
-                      ? finalReport.filler_word_ratio * 100
-                      : undefined,
-                  speaking_metrics: finalReport.speaking_metrics || {},
-                  filler_word_ratio: finalReport.filler_word_ratio
-                },
-                highlights: {
-                  thumbnail_url: progressData.thumbnail_url || finalReport.thumbnail_url || null
-                },
-                created_at: finalReport.timestamp || new Date().toISOString()
-              }
+            const finalReport = progressData.report || {}
+            const sessionStub = {
+              session_id: uploadData.session_id,
+              project_name: projectLabel,
+              title: projectLabel,
+              file_name: projectLabel || file?.name,
+              original_file_name: file?.name || null,
+              file_type:
+                finalReport.file_type ||
+                uploadData.file_type ||
+                (file?.type?.startsWith('video') ? 'video' : file?.type?.startsWith('audio') ? 'audio' : null),
+              overall_score: finalReport.overall_score,
+              score_breakdown: {
+                voice_confidence: finalReport.voice_confidence,
+                facial_confidence: finalReport.facial_confidence,
+                vocabulary_score: finalReport.vocabulary_score
+              },
+              metrics: {
+                duration_seconds:
+                  finalReport.speaking_metrics?.total_duration ??
+                  finalReport.total_duration ??
+                  finalReport.metrics?.duration_seconds ??
+                  null,
+                total_duration:
+                  finalReport.speaking_metrics?.total_duration ??
+                  finalReport.total_duration ??
+                  finalReport.metrics?.total_duration ??
+                  null,
+                pacing_score: finalReport.speaking_rate_wpm,
+                speaking_rate_wpm: finalReport.speaking_rate_wpm,
+                total_words:
+                  finalReport.total_words ??
+                  finalReport.speaking_metrics?.total_words ??
+                  finalReport.metrics?.total_words ??
+                  null,
+                filler_ratio: finalReport.filler_word_ratio,
+                filler_percentage:
+                  typeof finalReport.filler_word_ratio === 'number'
+                    ? finalReport.filler_word_ratio * 100
+                    : undefined,
+                speaking_metrics: finalReport.speaking_metrics || {},
+                filler_word_ratio: finalReport.filler_word_ratio
+              },
+              highlights: {
+                thumbnail_url: progressData.thumbnail_url || finalReport.thumbnail_url || null
+              },
+              created_at: finalReport.timestamp || new Date().toISOString()
+            }
 
+            if (!user) {
               persistGuestSession(sessionStub)
             } else {
-            await loadAnalysisHistory()
+              setAnalysisHistory((prev) => {
+                const filtered = prev.filter((session) => session.session_id !== sessionStub.session_id)
+                return [sessionStub, ...filtered]
+              })
+              const fetchedSessions = await loadAnalysisHistory()
+              if (!Array.isArray(fetchedSessions) || fetchedSessions.length === 0) {
+                setAnalysisHistory((prev) => {
+                  const filtered = prev.filter((session) => session.session_id !== sessionStub.session_id)
+                  return [sessionStub, ...filtered]
+                })
+              }
             }
             
             // Navigate to video analysis page
@@ -986,6 +1229,100 @@ const Dashboard = () => {
             </div>
             <div className="upload-text">
               {file ? file.name : 'Click to select audio or video file'}
+            </div>
+            <div
+              className="recording-controls"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="recording-header">
+                <i className="fas fa-dot-circle" />
+                <span>Or record directly</span>
+              </div>
+              <div className="recording-buttons">
+                <button
+                  type="button"
+                  className="record-btn"
+                  disabled={!supportsRecording || isRecording || processing}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    startRecording('video')
+                  }}
+                >
+                  <i className="fas fa-video" />
+                  {isRecording && recordingType === 'video' ? 'Recording…' : 'Record Video'}
+                </button>
+                <button
+                  type="button"
+                  className="record-btn"
+                  disabled={!supportsRecording || isRecording || processing}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    startRecording('audio')
+                  }}
+                >
+                  <i className="fas fa-microphone" />
+                  {isRecording && recordingType === 'audio' ? 'Recording…' : 'Record Audio'}
+                </button>
+                {isRecording && (
+                  <>
+                    <button
+                      type="button"
+                      className="record-btn stop"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        stopRecording()
+                      }}
+                    >
+                      <i className="fas fa-stop" />
+                      Stop & Save
+                    </button>
+                    <button
+                      type="button"
+                      className="record-btn ghost"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        cancelRecording()
+                      }}
+                    >
+                      <i className="fas fa-times" />
+                      Discard
+                    </button>
+                  </>
+                )}
+              </div>
+              {recordingType === 'video' && previewStream && (
+                <div className="recording-preview-wrapper">
+                  <video
+                    ref={previewVideoRef}
+                    className="recording-preview"
+                    autoPlay
+                    muted
+                    playsInline
+                  />
+                </div>
+              )}
+              {recordingType === 'audio' && isRecording && (
+                <div className="recording-audio-indicator">
+                  <i className="fas fa-wave-square" />
+                  Listening…
+                </div>
+              )}
+              {isRecording && (
+                <div className="recording-status">
+                  <span className="recording-indicator" />
+                  Recording {recordingType} · {formatRecordingTime(recordingDuration)}
+                </div>
+              )}
+              {!supportsRecording && (
+                <div className="recording-error">
+                  Browser recording is not supported here. Please upload a file instead.
+                </div>
+              )}
+              {recordingError && (
+                <div className="recording-error">
+                  {recordingError}
+                </div>
+              )}
             </div>
             {file && (
               <motion.button

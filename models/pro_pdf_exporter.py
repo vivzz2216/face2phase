@@ -94,7 +94,8 @@ class ProfessionalPDFExporter:
         weak_pct = safe_get(report, "word_analysis", "weak_words", "weak_word_percentage", default=None)
         if weak_pct is None and report.get("total_words"):
             weak_pct = round((weak_words / max(report["total_words"], 1)) * 100, 1) if report["total_words"] else 0
-        conciseness_excess = 0.0
+        conciseness_excess = None
+        fluency_score = None
         speaking_metrics = report.get("speaking_metrics") or {}
         total_words = report.get("total_words") or speaking_metrics.get("total_words") or 0
         if speaking_rate:
@@ -102,8 +103,7 @@ class ProfessionalPDFExporter:
                 conciseness_excess = 0.0
             else:
                 conciseness_excess = round(abs(speaking_rate - 155) / 155 * 100, 1)
-        else:
-            conciseness_excess = 0.0
+            fluency_score = max(0, min(100, 100 - conciseness_excess))
         eye_contact_pct = safe_get(report, "visual_analytics", "tension_summary", "avg_eye_contact_pct", default=None)
         tension_percentage = safe_get(report, "visual_analytics", "tension_summary", "tension_percentage", default=None)
 
@@ -133,6 +133,25 @@ class ProfessionalPDFExporter:
         else:
             eye_contact_summary = "Eye contact data unavailable"
 
+        fluency_value_display = f"{fluency_score:.0f} / 100" if fluency_score is not None else "—"
+        fluency_comment = (
+            f"Speaking rate {speaking_rate:.0f} wpm; keep within 140–180 range."
+            if speaking_rate
+            else "Speaking rate not captured."
+        )
+        conciseness_value_display = (
+            f"{conciseness_excess:.1f}% excess" if conciseness_excess is not None else "Not captured"
+        )
+        conciseness_comment = (
+            "Trim supporting detail and lead with headline ideas."
+            if conciseness_excess is not None and conciseness_excess > 5
+            else (
+                "Delivery stayed tight and purposeful."
+                if conciseness_excess is not None
+                else "Insufficient data to evaluate conciseness."
+            )
+        )
+
         performance_overview = [
             {
                 "label": "Pronunciation",
@@ -141,8 +160,8 @@ class ProfessionalPDFExporter:
             },
             {
                 "label": "Fluency",
-                "value": f"{max(0, min(100, 100 - conciseness_excess)):.0f} / 100",
-                "comment": f"Speaking rate {speaking_rate:.0f} wpm; keep within 140–180 range." if speaking_rate else "Speaking rate not captured."
+                "value": fluency_value_display,
+                "comment": fluency_comment
             },
             {
                 "label": "Confidence",
@@ -174,8 +193,12 @@ class ProfessionalPDFExporter:
             },
             {
                 "category": "Fluency",
-                "value": f"{max(0, min(100, 100 - conciseness_excess)):.0f} / 100",
-                "comment": f"Pace currently {speaking_rate:.0f} wpm; target 140–180 for natural flow." if speaking_rate else "Speaking pace unavailable."
+                "value": fluency_value_display,
+                "comment": (
+                    f"Pace currently {speaking_rate:.0f} wpm; target 140–180 for natural flow."
+                    if speaking_rate
+                    else "Speaking pace unavailable."
+                )
             },
             {
                 "category": "Confidence",
@@ -194,8 +217,8 @@ class ProfessionalPDFExporter:
             },
             {
                 "category": "Conciseness",
-                "value": f"{conciseness_excess:.1f}% excess",
-                "comment": "Trim supporting detail and lead with headline ideas." if conciseness_excess > 5 else "Delivery stayed tight and purposeful."
+                "value": conciseness_value_display,
+                "comment": conciseness_comment
             },
             {
                 "category": "Eye Contact",

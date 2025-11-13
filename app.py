@@ -129,7 +129,17 @@ async def process_file_async(session_id: str, file_path: Path, file_type: str):
         logger.debug(f"File exists: {file_path.exists()}")
         logger.debug(f"File size: {file_path.stat().st_size if file_path.exists() else 'N/A'}")
         
-        processing_status[session_id] = {"status": "processing", "progress": 0}
+        current_status = processing_status.get(session_id, {})
+        current_status.update({
+            "status": "processing",
+            "progress": 0,
+            "file_path": str(file_path),
+            "file_type": file_type,
+            "filename": current_status.get("filename"),
+            "user_id": current_status.get("user_id"),
+            "file_size": current_status.get("file_size"),
+        })
+        processing_status[session_id] = current_status
         
         # Extract audio if video
         audio_path = file_path
@@ -458,11 +468,14 @@ def get_or_create_user(user_email: Optional[str], user_uid: Optional[str], user_
 
 @app.post("/upload")
 async def upload_file(
-    background_tasks: BackgroundTasks, 
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    email: Optional[str] = None,
+    uid: Optional[str] = None,
+    display_name: Optional[str] = None,
     user_email: Optional[str] = None,
     user_uid: Optional[str] = None,
-    user_display_name: Optional[str] = None
+    user_display_name: Optional[str] = None,
 ):
     """Handle file upload and start processing"""
     logger.info(f"Upload endpoint called, filename: {file.filename if file else 'None'}")
@@ -505,9 +518,18 @@ async def upload_file(
         session_id = str(uuid.uuid4())
         
         # Get or create user if Firebase info provided
+        resolved_email = user_email or email
+        resolved_uid = user_uid or uid
+        resolved_display_name = user_display_name or display_name
+
         user_id = None
-        if user_email:
-            user_id = await asyncio.to_thread(get_or_create_user, user_email, user_uid, user_display_name)
+        if resolved_email:
+            user_id = await asyncio.to_thread(
+                get_or_create_user,
+                resolved_email,
+                resolved_uid,
+                resolved_display_name,
+            )
         
         # Store file path and user_id in processing status for later retrieval
         processing_status[session_id] = {
@@ -518,6 +540,29 @@ async def upload_file(
             "user_id": user_id,
             "file_size": len(content)
         }
+
+        # ----------------------------------------
+        # CREATE MINIMAL SESSION SUMMARY ON UPLOAD
+        # ----------------------------------------
+        if user_id:
+            try:
+                db_manager.save_session_summary({
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "title": file.filename,      # for UI
+                    "file_name": file.filename,
+                    "file_type": file_type,
+                    "overall_score": None,
+                    "score_breakdown": {},
+                    "highlights": {},
+                    "metrics": {},
+                    "pdf_path": None
+                })
+                logger.info(f"Created session summary for {session_id}")
+            except Exception as exc:
+                logger.error(f"Failed to create initial session summary: {exc}")
+
+        
         
         # Start background processing
         background_tasks.add_task(process_file_async, session_id, file_path, file_type)
@@ -1222,63 +1267,67 @@ async def get_firebase_user_analyses(
         logger.error(f"Firebase analyses error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to retrieve analyses: {str(e)}")
 
-@app.post("/api/firebase/sessions")
-@app.get("/api/firebase/sessions")
-async def get_firebase_sessions(
-    request: Optional[FirebaseUserRequest] = Body(default=None),
-    limit: int = 50,
-    email: Optional[str] = None,
-    uid: Optional[str] = None,
-    display_name: Optional[str] = None
-):
-    """Return session summaries for Firebase-authenticated users."""
+async def _fetch_firebase_sessions(email: str, uid: str, display_name: Optional[str] = None, limit: int = 50):
+    """Shared helper to fetch Firebase-backed session summaries."""
     try:
-        if request:
-            user_email = request.email
-            user_uid = request.uid
-            user_display_name = request.display_name
-        else:
-            if not email or not uid:
-                raise HTTPException(status_code=400, detail="email and uid are required")
-            user_email = email
-            user_uid = uid
-            user_display_name = display_name
-
-        user_id = get_or_create_user(user_email, user_uid, user_display_name)
+        user_id = get_or_create_user(email, uid, display_name)
         if not user_id:
             return {"sessions": []}
-
         sessions = db_manager.get_user_sessions(user_id, limit)
-
         if not sessions:
             legacy = db_manager.get_user_analyses(user_id, limit)
-            fallback_sessions = []
-            for analysis in legacy:
-                fallback_sessions.append({
-                    "session_id": analysis.get("session_id") or analysis.get("id"),
-                    "title": analysis.get("file_name") or "Untitled Session",
-                    "file_name": analysis.get("file_name"),
-                    "file_type": analysis.get("file_type"),
-                    "overall_score": analysis.get("overall_score"),
+            formatted = []
+            for a in legacy:
+                formatted.append({
+                    "session_id": a.get("session_id") or a.get("id"),
+                    "title": a.get("file_name") or "Untitled Session",
+                    "file_name": a.get("file_name"),
+                    "file_type": a.get("file_type"),
+                    "overall_score": a.get("overall_score"),
                     "score_breakdown": {
-                        "voice_confidence": analysis.get("voice_confidence"),
-                        "facial_confidence": analysis.get("facial_confidence"),
-                        "vocabulary_score": analysis.get("vocabulary_score"),
+                        "voice_confidence": a.get("voice_confidence"),
+                        "facial_confidence": a.get("facial_confidence"),
+                        "vocabulary_score": a.get("vocabulary_score"),
                     },
                     "metrics": {
-                        "filler_word_count": analysis.get("audio_analysis", {}).get("filler_analysis", {}).get("total_fillers"),
-                        "speaking_rate_wpm": analysis.get("audio_analysis", {}).get("transcription", {}).get("speaking_rate_wpm"),
+                        "filler_word_count": a.get("audio_analysis", {}).get("filler_analysis", {}).get("total_fillers"),
+                        "speaking_rate_wpm": a.get("audio_analysis", {}).get("transcription", {}).get("speaking_rate_wpm"),
                     },
-                    "created_at": analysis.get("created_at"),
+                    "created_at": a.get("created_at"),
                 })
-            sessions = fallback_sessions
-
+            sessions = formatted
         return {"sessions": sessions}
-    except HTTPException:
-        raise
     except Exception as exc:
         logger.error(f"Firebase sessions error: {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve sessions: {str(exc)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve sessions")
+
+
+@app.post("/api/firebase/sessions")
+async def get_firebase_sessions_post(payload: dict = Body(...)):
+    email = payload.get("email")
+    uid = payload.get("uid")
+    display_name = payload.get("display_name")
+
+    return await _fetch_firebase_sessions(
+        email=email,
+        uid=uid,
+        display_name=display_name
+    )
+
+@app.get("/api/firebase/sessions")
+async def get_firebase_sessions_get(
+    email: str,
+    uid: str,
+    display_name: Optional[str] = None,
+    limit: int = 50
+):
+    """Return session summaries for Firebase-authenticated users (GET query params)."""
+    return await _fetch_firebase_sessions(
+        email=email,
+        uid=uid,
+        display_name=display_name,
+        limit=limit
+    )
 
 # Session management
 @app.delete("/api/sessions/{session_id}")

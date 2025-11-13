@@ -1048,13 +1048,13 @@ class EnhancedAudioAnalyzer:
                             if classification:
                                 event['classification'] = classification
                             acoustic_events.append(event)
-
+                            
                             # Only treat as filler if we have a known filler token
                             if event_label in valid_filler_tokens:
                                 acoustic_filler_count += 1
                                 filler_breakdown[f"[acoustic] {event_label}"] += 1
                                 filler_count += 1
-                            
+
                             mumbling_instances.append({
                                 'word': event_label,
                                 'position': len(words),

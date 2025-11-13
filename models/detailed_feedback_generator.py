@@ -435,10 +435,14 @@ Respond ONLY with valid JSON, no additional text."""
             growth_areas.extend(visual_feedback.get('growth', []))
 
             if not growth_areas:
-                growth_areas = improvements[:3] if improvements else [
-                    "Clarify your technical descriptions for better audience understanding.",
-                    "Ensure project descriptions align with personal branding."
-                ]
+                growth_areas = (
+                    improvements[:3]
+                    if improvements
+                    else [
+                        "Clarify your technical descriptions for better audience understanding.",
+                        "Ensure project descriptions align with personal branding."
+                    ]
+                )
             else:
                 # Deduplicate growth areas while preserving order
                 seen = set()
