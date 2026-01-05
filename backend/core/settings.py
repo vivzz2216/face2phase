@@ -16,6 +16,10 @@ THUMBNAIL_DIR = REPORTS_DIR / "thumbnails"
 EXPORTS_DIR = STORAGE_DIR / "exports"
 DB_DIR = STORAGE_DIR / "db"
 
+# Disable numba JIT compilation to avoid compatibility issues
+import os
+os.environ['NUMBA_DISABLE_JIT'] = '1'  # Disable numba JIT to prevent compilation errors
+
 # Create directories if they don't exist (in correct order)
 STORAGE_DIR.mkdir(exist_ok=True)
 UPLOAD_DIR.mkdir(exist_ok=True)
