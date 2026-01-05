@@ -28,55 +28,37 @@ const TranscriptPanel = ({ transcript, currentTime, onSeek, acousticFillers = []
       return new Map()
     }
 
-    const segments = transcript
     const map = new Map()
 
-    const resolveSegmentStart = (seg) => {
-      if (typeof seg.start === 'number') return seg.start
-      if (typeof seg.timestamp_seconds === 'number') return seg.timestamp_seconds
-      if (typeof seg.time === 'number') return seg.time
-      return null
-    }
+    // Filler words to detect in text
+    const fillerWords = new Set([
+      'um', 'uh', 'ah', 'er', 'hmm', 'erm', 'eh',
+      'umm', 'uhh', 'ahh', 'ehh', 'err', 'uhm', 'ahm',
+      'ummm', 'uhhh', 'ahhh', 'ehhh', 'errr', 'oh'
+    ])
 
-    const resolveSegmentEnd = (index) => {
-      const seg = segments[index]
-      if (typeof seg.end === 'number') return seg.end
-      if (typeof seg.stop === 'number') return seg.stop
-      if (index + 1 < segments.length) {
-        const next = segments[index + 1]
-        const nextStart = resolveSegmentStart(next)
-        if (typeof nextStart === 'number') return nextStart
-      }
-      const start = resolveSegmentStart(seg)
-      return start !== null ? start + 0.5 : null
-    }
+    // Count actual filler words in each segment's text
+    transcript.forEach((segment) => {
+      const text = segment.text || ''
+      const words = text.toLowerCase().split(/\s+/)
 
-    (acousticFillers || []).forEach((event) => {
-      const eventStart = typeof event.start === 'number' ? event.start : null
-      if (eventStart === null) return
-
-      let matchedIndex = -1
-      for (let i = 0; i < segments.length; i += 1) {
-        const segStart = resolveSegmentStart(segments[i])
-        const segEnd = resolveSegmentEnd(i)
-        if (segStart === null) continue
-
-        const effectiveEnd = segEnd !== null ? segEnd : segStart + 0.5
-        const padding = 0.05
-        if (eventStart >= segStart - padding && eventStart <= effectiveEnd + padding) {
-          matchedIndex = i
-          break
+      let count = 0
+      words.forEach(word => {
+        // Remove punctuation and check if it's a filler word
+        const cleanWord = word.replace(/[.,!?;:]/g, '')
+        if (fillerWords.has(cleanWord)) {
+          count++
         }
-      }
+      })
 
-      if (matchedIndex >= 0) {
-        const key = getSegmentKey(segments[matchedIndex])
-        map.set(key, (map.get(key) || 0) + 1)
+      if (count > 0) {
+        const key = getSegmentKey(segment)
+        map.set(key, count)
       }
     })
 
     return map
-  }, [acousticFillers, transcript])
+  }, [transcript])
 
   useEffect(() => {
     if (!transcript) return

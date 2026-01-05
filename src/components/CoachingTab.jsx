@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { playPronunciation, stopPronunciation, isSpeechSynthesisAvailable } from '../utils/audioPlayer'
+import { playPronunciation, stopPronunciation, isSpeechSynthesisAvailable } from '../lib/audioPlayer'
 import './CoachingTab.css'
 
 const CoachingTab = ({ feedback, reportData }) => {
@@ -261,7 +261,7 @@ const CoachingTab = ({ feedback, reportData }) => {
     const points = []
     if (fillerPercentagePrecise !== null && fillerPercentagePrecise > 5) {
       points.push('Reduce filler words to sound more confident and polished.')
-  }
+    }
     if (pronunciationIssues.length) {
       points.push('Tidy pronunciation of key terms to reinforce credibility.')
     }

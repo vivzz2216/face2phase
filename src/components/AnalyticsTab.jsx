@@ -14,12 +14,16 @@ const AnalyticsTab = ({ reportData }) => {
   const weakWordsData = wordAnalysis.weak_words || {}
   const fillerWordsData = wordAnalysis.filler_words || {}
   const vocabularyData = wordAnalysis.vocabulary || {}
-  
+
   // Get ACTUAL filler analysis from audio_results (most reliable)
   const fillerAnalysis = reportData.filler_analysis || {}
   const actualFillerCount = fillerAnalysis.total_fillers || fillerWordsData.filler_count || reportData.filler_word_count || 0
   const actualFillerRatio = fillerAnalysis.filler_ratio || 0
-  const actualFillerBreakdown = fillerAnalysis.filler_breakdown || fillerWordsData.filler_breakdown || {}
+  // Filter out [acoustic] entries - show only fillers from transcript
+  const rawFillerBreakdown = fillerAnalysis.filler_breakdown || fillerWordsData.filler_breakdown || {}
+  const actualFillerBreakdown = Object.fromEntries(
+    Object.entries(rawFillerBreakdown).filter(([word]) => !word.startsWith('[acoustic]'))
+  )
   const acousticEventsRaw = Array.isArray(fillerAnalysis.acoustic_events) ? fillerAnalysis.acoustic_events : []
   const textModelEventsRaw = Array.isArray(fillerAnalysis.text_model_fillers) ? fillerAnalysis.text_model_fillers : []
   const normalizedTextEvents = textModelEventsRaw
@@ -44,36 +48,36 @@ const AnalyticsTab = ({ reportData }) => {
   const acousticFillerCountRaw = fillerAnalysis.acoustic_filler_count || fillerAnalysis.acoustic_fillers || acousticEventsRaw.length || 0
   const textModelFillerCount = fillerAnalysis.text_model_filler_count || textModelEventsRaw.length || 0
   const acousticFillerCount = detectedFillerEvents.length || (acousticFillerCountRaw + textModelFillerCount)
-  
+
   // Get actual total words from multiple sources
-  const totalWords = vocabularyData.total_words || 
-                     reportData.total_words || 
-                     reportData.speaking_metrics?.total_words || 
-                     (reportData.transcript ? reportData.transcript.split().length : 0) || 
-                     1
-  
+  const totalWords = vocabularyData.total_words ||
+    reportData.total_words ||
+    reportData.speaking_metrics?.total_words ||
+    (reportData.transcript ? reportData.transcript.split().length : 0) ||
+    1
+
   // Calculate filler percentage from ACTUAL data
-  const fillerPercentage = actualFillerRatio > 0 
+  const fillerPercentage = actualFillerRatio > 0
     ? (actualFillerRatio * 100).toFixed(1)
     : (totalWords > 0 ? ((actualFillerCount / totalWords) * 100).toFixed(1) : '0.0')
-  
+
   // Weak words data - use ACTUAL data
-  const weakWordsPercentage = weakWordsData.weak_word_percentage || 
-                              (weakWordsData.weak_word_count && totalWords > 0 
-                                ? ((weakWordsData.weak_word_count / totalWords) * 100).toFixed(1) 
-                                : '0.0')
+  const weakWordsPercentage = weakWordsData.weak_word_percentage ||
+    (weakWordsData.weak_word_count && totalWords > 0
+      ? ((weakWordsData.weak_word_count / totalWords) * 100).toFixed(1)
+      : '0.0')
   const weakWordBreakdown = weakWordsData.weak_word_breakdown || {}
   const weakWordsFound = weakWordsData.weak_words_found || []
-  
+
   // Mumbling detection from actual analysis
   const mumblingCount = fillerAnalysis.mumbling_count || acousticFillerCount || 0
   const mumblingDetected = mumblingCount > 0 || fillerAnalysis.mumbling_instances?.length > 0 || acousticFillerCount > 0
-  
+
   // Vocabulary metrics
   const vocabularyRichness = vocabularyData.vocabulary_richness || reportData.vocabulary_richness || 0
   const uniqueWords = vocabularyData.unique_words || reportData.unique_words || 0
   const vocabularySuggestions = vocabularyData.suggestions || []
-  
+
   // Calculate conciseness excess based on speaking rate and word count
   const speakingRate = reportData.speaking_rate_wpm || 150
   const idealRate = 150
@@ -137,7 +141,7 @@ const AnalyticsTab = ({ reportData }) => {
 
       <div className="analytics-content">
         {activeSubTab === 'word-choice' && (
-            <WordChoiceAnalytics
+          <WordChoiceAnalytics
             fillerPercentage={fillerPercentage}
             weakWordsPercentage={weakWordsPercentage}
             excessPercentage={excessPercentage}
@@ -180,10 +184,10 @@ const AnalyticsTab = ({ reportData }) => {
   )
 }
 
-const WordChoiceAnalytics = ({ 
-  fillerPercentage, 
-  weakWordsPercentage, 
-  excessPercentage, 
+const WordChoiceAnalytics = ({
+  fillerPercentage,
+  weakWordsPercentage,
+  excessPercentage,
   reportData,
   totalWords,
   weakWordBreakdown = {},
@@ -473,8 +477,8 @@ const WordChoiceAnalytics = ({
   return (
     <div className="analytics-section">
       <section className="summary-block">
-      <h3 className="section-title">
-        <i className="fas fa-trophy" /> What went well
+        <h3 className="section-title">
+          <i className="fas fa-trophy" /> What went well
         </h3>
         <div className="summary-grid">
           {positiveHighlights.length > 0 ? (
@@ -501,10 +505,10 @@ const WordChoiceAnalytics = ({
       <h3 className="section-title">
         <i className="fas fa-sliders-h" /> Detailed Breakdown
       </h3>
-      
+
       {/* Filler Words */}
       <div className="metric-row">
-        <div 
+        <div
           className="metric-header"
           onClick={() => handleToggle('filler', setExpandedFiller, expandedFiller)}
         >
@@ -519,105 +523,105 @@ const WordChoiceAnalytics = ({
             {loadingState.filler ? (
               <MetricLoading />
             ) : (
-            <div className={`feedback-box ${fillerPercentage < 4 ? 'success' : ''}`}>
-              {fillerPercentage < 4 ? (
-                <>
-                  <p>Well done! It's natural to have fewer than 4% fillers.</p>
-                  {mumblingDetected && (
-                    <p style={{ fontSize: '0.8rem', color: 'var(--accent-warning)', marginTop: '0.5rem' }}>
-                      ⚠️ Some mumbling patterns detected - practice clear articulation
-                    </p>
-                  )}
-                </>
-              ) : (
-                <>
-                  <p>You used <strong>{fillerPercentage}%</strong> filler words. Try to reduce this to below 4%.</p>
-                  {mumblingDetected && (
-                    <p style={{ fontSize: '0.8rem', color: 'var(--accent-warning)', marginTop: '0.5rem' }}>
-                      ⚠️ Mumbling patterns detected - practice clear articulation
-                    </p>
-                  )}
-                </>
-              )}
-              
-              {Object.keys(fillerBreakdown).length > 0 && (
-                <div style={{ marginTop: '0.75rem' }}>
-                  <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>Filler words breakdown:</p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    {Object.entries(fillerBreakdown)
-                      .sort((a, b) => b[1] - a[1])
-                      .map(([word, count]) => (
-                        <span key={word} style={{
-                          padding: '0.25rem 0.5rem',
-                          background: 'rgba(139, 92, 246, 0.15)',
-                          borderRadius: '4px',
-                          fontSize: '0.75rem',
-                          border: '1px solid rgba(139, 92, 246, 0.3)'
-                        }}>
-                          "{word}" ({count})
-                        </span>
-                      ))}
-                  </div>
-                </div>
-              )}
-
-              {acousticCount > 0 && (
-                <div style={{ marginTop: '0.75rem' }}>
-                  <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.4rem' }}>
-                    Detected filler &amp; murmur events ({acousticCount}):
-                  </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                    {acousticEvents.slice(0, 4).map((event, idx) => {
-                      const startSeconds = typeof event.start === 'number' ? event.start : null
-                      const durationSeconds = typeof event.duration === 'number'
-                        ? event.duration
-                        : (typeof event.start === 'number' && typeof event.end === 'number'
-                          ? Math.max(0, event.end - event.start)
-                          : 0)
-                      const confidence = typeof event.confidence === 'number'
-                        ? event.confidence
-                        : (typeof event.score === 'number' ? event.score : 0)
-                      return (
-                        <div
-                          key={`${event.start}-${idx}`}
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            gap: '1rem',
-                            background: 'rgba(248, 113, 113, 0.12)',
-                            border: '1px solid rgba(248, 113, 113, 0.35)',
-                            borderRadius: '6px',
-                            padding: '0.45rem 0.6rem',
-                            fontSize: '0.75rem',
-                            color: 'var(--text-secondary)'
-                          }}
-                        >
-                          <span>
-                            {event.label || 'murmur'}{event.method ? ` (${event.method.replace('_', ' ')})` : ''} {startSeconds !== null && (
-                              <>
-                                at <strong>{formatSeconds(startSeconds)}</strong>
-                              </>
-                            )}
-                          </span>
-                          <span>
-                            {Math.round(confidence * 100)}% conf · {formatSeconds(durationSeconds)} long
-                          </span>
-                        </div>
-                      )
-                    })}
-                    {acousticEvents.length > 4 && (
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>
-                        +{acousticEvents.length - 4} more events detected
-                      </span>
+              <div className={`feedback-box ${fillerPercentage < 4 ? 'success' : ''}`}>
+                {fillerPercentage < 4 ? (
+                  <>
+                    <p>Well done! It's natural to have fewer than 4% fillers.</p>
+                    {mumblingDetected && (
+                      <p style={{ fontSize: '0.8rem', color: 'var(--accent-warning)', marginTop: '0.5rem' }}>
+                        ⚠️ Some mumbling patterns detected - practice clear articulation
+                      </p>
                     )}
+                  </>
+                ) : (
+                  <>
+                    <p>You used <strong>{fillerPercentage}%</strong> filler words. Try to reduce this to below 4%.</p>
+                    {mumblingDetected && (
+                      <p style={{ fontSize: '0.8rem', color: 'var(--accent-warning)', marginTop: '0.5rem' }}>
+                        ⚠️ Mumbling patterns detected - practice clear articulation
+                      </p>
+                    )}
+                  </>
+                )}
+
+                {Object.keys(fillerBreakdown).length > 0 && (
+                  <div style={{ marginTop: '0.75rem' }}>
+                    <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>Filler words breakdown:</p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      {Object.entries(fillerBreakdown)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([word, count]) => (
+                          <span key={word} style={{
+                            padding: '0.25rem 0.5rem',
+                            background: 'rgba(139, 92, 246, 0.15)',
+                            borderRadius: '4px',
+                            fontSize: '0.75rem',
+                            border: '1px solid rgba(139, 92, 246, 0.3)'
+                          }}>
+                            "{word}" ({count})
+                          </span>
+                        ))}
+                    </div>
                   </div>
-                </div>
-              )}
-              
-              <a href="#" className="external-link" style={{ marginTop: '0.75rem', display: 'inline-block' }}>
-                How to avoid filler words <i className="fas fa-external-link-alt" />
-              </a>
-            </div>
+                )}
+
+                {acousticCount > 0 && (
+                  <div style={{ marginTop: '0.75rem' }}>
+                    <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.4rem' }}>
+                      Detected filler &amp; murmur events ({acousticCount}):
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                      {acousticEvents.slice(0, 4).map((event, idx) => {
+                        const startSeconds = typeof event.start === 'number' ? event.start : null
+                        const durationSeconds = typeof event.duration === 'number'
+                          ? event.duration
+                          : (typeof event.start === 'number' && typeof event.end === 'number'
+                            ? Math.max(0, event.end - event.start)
+                            : 0)
+                        const confidence = typeof event.confidence === 'number'
+                          ? event.confidence
+                          : (typeof event.score === 'number' ? event.score : 0)
+                        return (
+                          <div
+                            key={`${event.start}-${idx}`}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              gap: '1rem',
+                              background: 'rgba(248, 113, 113, 0.12)',
+                              border: '1px solid rgba(248, 113, 113, 0.35)',
+                              borderRadius: '6px',
+                              padding: '0.45rem 0.6rem',
+                              fontSize: '0.75rem',
+                              color: 'var(--text-secondary)'
+                            }}
+                          >
+                            <span>
+                              {event.label || 'murmur'}{event.method ? ` (${event.method.replace('_', ' ')})` : ''} {startSeconds !== null && (
+                                <>
+                                  at <strong>{formatSeconds(startSeconds)}</strong>
+                                </>
+                              )}
+                            </span>
+                            <span>
+                              {Math.round(confidence * 100)}% conf · {formatSeconds(durationSeconds)} long
+                            </span>
+                          </div>
+                        )
+                      })}
+                      {acousticEvents.length > 4 && (
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>
+                          +{acousticEvents.length - 4} more events detected
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <a href="#" className="external-link" style={{ marginTop: '0.75rem', display: 'inline-block' }}>
+                  How to avoid filler words <i className="fas fa-external-link-alt" />
+                </a>
+              </div>
             )}
           </div>
         )}
@@ -625,7 +629,7 @@ const WordChoiceAnalytics = ({
 
       {/* Weak Words */}
       <div className="metric-row">
-        <div 
+        <div
           className="metric-header"
           onClick={() => handleToggle('weak', setExpandedWeak, expandedWeak)}
         >
@@ -640,40 +644,40 @@ const WordChoiceAnalytics = ({
             {loadingState.weak ? (
               <MetricLoading />
             ) : (
-            <div className="feedback-box">
-              <p>You used <strong>{weakWordsPercentage}%</strong> weak words ({weakWordsFound.length} instances). Consider using stronger, more specific language.</p>
-              
-              {Object.keys(weakWordBreakdown).length > 0 && (
-                <div style={{ marginTop: '0.75rem' }}>
-                  <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>Weak words found:</p>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                    {Object.entries(weakWordBreakdown).map(([word, count]) => {
-                      const wordInfo = weakWordsFound.find(w => w.word.toLowerCase() === word.toLowerCase())
-                      return (
-                        <li key={word} style={{ 
-                          padding: '0.5rem', 
-                          marginBottom: '0.375rem', 
-                          background: 'rgba(255, 193, 7, 0.1)',
-                          borderRadius: '4px',
-                          fontSize: '0.8rem'
-                        }}>
-                          <strong>"{word}"</strong> - used {count} time{count > 1 ? 's' : ''}
-                          {wordInfo?.suggestion && (
-                            <div style={{ marginTop: '0.25rem', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
-                              💡 {wordInfo.suggestion}
-                            </div>
-                          )}
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </div>
-              )}
-              
-              <a href="#" className="external-link" style={{ marginTop: '0.75rem', display: 'inline-block' }}>
-                Learn about weak words <i className="fas fa-external-link-alt" />
-              </a>
-            </div>
+              <div className="feedback-box">
+                <p>You used <strong>{weakWordsPercentage}%</strong> weak words ({weakWordsFound.length} instances). Consider using stronger, more specific language.</p>
+
+                {Object.keys(weakWordBreakdown).length > 0 && (
+                  <div style={{ marginTop: '0.75rem' }}>
+                    <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>Weak words found:</p>
+                    <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                      {Object.entries(weakWordBreakdown).map(([word, count]) => {
+                        const wordInfo = weakWordsFound.find(w => w.word.toLowerCase() === word.toLowerCase())
+                        return (
+                          <li key={word} style={{
+                            padding: '0.5rem',
+                            marginBottom: '0.375rem',
+                            background: 'rgba(255, 193, 7, 0.1)',
+                            borderRadius: '4px',
+                            fontSize: '0.8rem'
+                          }}>
+                            <strong>"{word}"</strong> - used {count} time{count > 1 ? 's' : ''}
+                            {wordInfo?.suggestion && (
+                              <div style={{ marginTop: '0.25rem', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+                                💡 {wordInfo.suggestion}
+                              </div>
+                            )}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+                )}
+
+                <a href="#" className="external-link" style={{ marginTop: '0.75rem', display: 'inline-block' }}>
+                  Learn about weak words <i className="fas fa-external-link-alt" />
+                </a>
+              </div>
             )}
           </div>
         )}
@@ -764,7 +768,7 @@ const WordChoiceAnalytics = ({
 
       {/* Vocabulary */}
       <div className="metric-row">
-        <div 
+        <div
           className="metric-header"
           onClick={() => handleToggle('vocabulary', setExpandedVocabulary, expandedVocabulary)}
         >
@@ -886,7 +890,7 @@ const WordChoiceAnalytics = ({
 
       {/* Conciseness */}
       <div className="metric-row">
-        <div 
+        <div
           className="metric-header"
           onClick={() => handleToggle('conciseness', setExpandedConciseness, expandedConciseness)}
         >
@@ -901,15 +905,15 @@ const WordChoiceAnalytics = ({
             {loadingState.conciseness ? (
               <MetricLoading />
             ) : (
-            <div className="feedback-box">
-              <p>Your speech has {excessPercentage}% excess. Try to be more concise and get to the point faster.</p>
+              <div className="feedback-box">
+                <p>Your speech has {excessPercentage}% excess. Try to be more concise and get to the point faster.</p>
                 {reportData?.speaking_metrics?.total_duration && reportData?.speaking_metrics?.speaking_time && (
                   <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.4rem' }}>
                     You spoke for {reportData.speaking_metrics.speaking_time.toFixed(1)}s out of {reportData.speaking_metrics.total_duration.toFixed(1)}s total. Trim supporting detail to reclaim {(reportData.speaking_metrics.total_duration - reportData.speaking_metrics.speaking_time).toFixed(1)}s for key insights.
                   </p>
                 )}
-              <a href="#" className="external-link">Tips for concise communication <i className="fas fa-external-link-alt" /></a>
-            </div>
+                <a href="#" className="external-link">Tips for concise communication <i className="fas fa-external-link-alt" /></a>
+              </div>
             )}
           </div>
         )}
@@ -922,18 +926,18 @@ const WordChoiceAnalytics = ({
         const openerPercentages = openerAnalysis.opener_percentages || {}
         const totalSentences = openerAnalysis.total_sentences || 0
         const recommendations = openerAnalysis.recommendations || []
-        
+
         // Get top weak openers (sorted by percentage)
         const topOpeners = Object.entries(openerPercentages)
           .filter(([_, pct]) => pct > 0)
           .sort((a, b) => b[1] - a[1])
           .slice(0, 5)
-        
+
         if (topOpeners.length > 0) {
           const topOpener = topOpeners[0]
           const openerName = topOpener[0].charAt(0).toUpperCase() + topOpener[0].slice(1)
           const openerPct = topOpener[1]
-          
+
           return (
             <div className="metric-row">
               <div className="metric-header">
@@ -943,10 +947,10 @@ const WordChoiceAnalytics = ({
               <div className="metric-content">
                 <div className="feedback-box">
                   <p>
-                    <strong>{openerPct}%</strong> of sentences start with "{openerName}". 
+                    <strong>{openerPct}%</strong> of sentences start with "{openerName}".
                     {openerPct > 20 && " This creates repetitive patterns. Vary your sentence openers for better engagement."}
                   </p>
-                  
+
                   {topOpeners.length > 1 && (
                     <div style={{ marginTop: '0.75rem' }}>
                       <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>Other weak openers detected:</p>
@@ -965,7 +969,7 @@ const WordChoiceAnalytics = ({
                       </div>
                     </div>
                   )}
-                  
+
                   {recommendations.length > 0 && (
                     <div style={{ marginTop: '0.75rem' }}>
                       <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>Recommendations:</p>
@@ -978,7 +982,7 @@ const WordChoiceAnalytics = ({
                       </ul>
                     </div>
                   )}
-                  
+
                   <a href="#" className="external-link" style={{ marginTop: '0.75rem', display: 'inline-block' }}>
                     Learn about sentence variety <i className="fas fa-external-link-alt" />
                   </a>
@@ -987,7 +991,7 @@ const WordChoiceAnalytics = ({
             </div>
           )
         }
-        
+
         return (
           <div className="metric-row">
             <div className="metric-content">
@@ -1061,19 +1065,19 @@ const DeliveryAnalytics = ({ speakingRate, pauseCount, eyeContactPercent, pauseS
   }
 
   const renderPacingCard = () => (
-      <div className="metric-row">
-        <div 
-          className="metric-header"
+    <div className="metric-row">
+      <div
+        className="metric-header"
         onClick={() => handleToggle('pacing', setExpandedPacing, expandedPacing)}
-        >
-          <span>Pacing</span>
-          <div className="metric-badge">
+      >
+        <span>Pacing</span>
+        <div className="metric-badge">
           {hasSpeakingRate ? `${speakingRate.toFixed(0)} WPM` : 'No data'}
-            <i className={`fas fa-chevron-${expandedPacing ? 'down' : 'right'}`} />
-          </div>
+          <i className={`fas fa-chevron-${expandedPacing ? 'down' : 'right'}`} />
         </div>
-        {expandedPacing && (
-          <div className="metric-content">
+      </div>
+      {expandedPacing && (
+        <div className="metric-content">
           {loadingState.pacing ? (
             <MetricLoading />
           ) : (
@@ -1091,133 +1095,133 @@ const DeliveryAnalytics = ({ speakingRate, pauseCount, eyeContactPercent, pauseS
                 {hasSpeakingRate && pacingFast && (
                   <p>You averaged {speakingRate.toFixed(0)} WPM, which is fast. Add breath-led pauses and emphasise keywords to stay below 170 WPM.</p>
                 )}
-            </div>
-              {hasSpeakingRate && (
-            <div className="pacing-visualization">
-              <div className="pace-gauge">
-                <div className="gauge-label-left">Slow</div>
-                <div className="gauge-label-center">Conversational</div>
-                <div className="gauge-label-right">Quick</div>
-                <div className="gauge-bar">
-                  <div 
-                    className="gauge-fill"
-                    style={{
-                      width: `${Math.min(100, Math.max(0, ((speakingRate - 60) / 180) * 100))}%`
-                    }}
-                  />
-                  <div 
-                    className="gauge-indicator"
-                    style={{
-                      left: `${Math.min(100, Math.max(0, ((speakingRate - 60) / 180) * 100))}%`
-                    }}
-                  />
-                </div>
-                    <div className="gauge-value">{speakingRate.toFixed(0)} WPM</div>
               </div>
+              {hasSpeakingRate && (
+                <div className="pacing-visualization">
+                  <div className="pace-gauge">
+                    <div className="gauge-label-left">Slow</div>
+                    <div className="gauge-label-center">Conversational</div>
+                    <div className="gauge-label-right">Quick</div>
+                    <div className="gauge-bar">
+                      <div
+                        className="gauge-fill"
+                        style={{
+                          width: `${Math.min(100, Math.max(0, ((speakingRate - 60) / 180) * 100))}%`
+                        }}
+                      />
+                      <div
+                        className="gauge-indicator"
+                        style={{
+                          left: `${Math.min(100, Math.max(0, ((speakingRate - 60) / 180) * 100))}%`
+                        }}
+                      />
+                    </div>
+                    <div className="gauge-value">{speakingRate.toFixed(0)} WPM</div>
                   </div>
+                </div>
               )}
             </>
           )}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
+    </div>
   )
 
   const renderEyeContactCard = () => (
-      <div className="metric-row">
-        <div 
-          className="metric-header"
+    <div className="metric-row">
+      <div
+        className="metric-header"
         onClick={() => handleToggle('eye', setExpandedEyeContact, expandedEyeContact)}
-        >
-          <span>Eye Contact</span>
+      >
+        <span>Eye Contact</span>
         <div className={`metric-badge ${eyeContactPositive ? 'success' : 'warning'}`}>
           {hasEyeContact ? `~${eyeContactPercent.toFixed(0)}%` : 'No data'}
-            <i className={`fas fa-chevron-${expandedEyeContact ? 'down' : 'right'}`} />
-          </div>
+          <i className={`fas fa-chevron-${expandedEyeContact ? 'down' : 'right'}`} />
         </div>
-        {expandedEyeContact && (
-          <div className="metric-content">
+      </div>
+      {expandedEyeContact && (
+        <div className="metric-content">
           {loadingState.eye ? (
             <MetricLoading />
           ) : (
             <div className="feedback-box">
-            {!hasEyeContact && (
-              <p>Eye-contact data was not captured this session.</p>
-            )}
-            {hasEyeContact && eyeContactPositive && (
-              <p>You maintained direct gaze for roughly {eyeContactPercent.toFixed(0)}% of the timeline. Keep rotating between left, centre and right viewers to hold engagement.</p>
-            )}
-            {hasEyeContact && !eyeContactPositive && (
-              <p>Eye contact held for about {eyeContactPercent.toFixed(0)}%. Practice the triangle gaze pattern (left–centre–right) and anchor your notes closer to the camera.</p>
-            )}
+              {!hasEyeContact && (
+                <p>Eye-contact data was not captured this session.</p>
+              )}
+              {hasEyeContact && eyeContactPositive && (
+                <p>You maintained direct gaze for roughly {eyeContactPercent.toFixed(0)}% of the timeline. Keep rotating between left, centre and right viewers to hold engagement.</p>
+              )}
+              {hasEyeContact && !eyeContactPositive && (
+                <p>Eye contact held for about {eyeContactPercent.toFixed(0)}%. Practice the triangle gaze pattern (left–centre–right) and anchor your notes closer to the camera.</p>
+              )}
             </div>
           )}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
+    </div>
   )
 
   const renderPauseCard = () => (
-      <div className="metric-row">
-        <div 
-          className="metric-header"
+    <div className="metric-row">
+      <div
+        className="metric-header"
         onClick={() => handleToggle('pause', setExpandedPauses, expandedPauses)}
-        >
-          <span>Pauses</span>
+      >
+        <span>Pauses</span>
         <div className={`metric-badge ${pausePositive ? 'success' : ''}`}>
           {typeof totalPauses === 'number' ? `${totalPauses} pause${totalPauses === 1 ? '' : 's'}` : 'No data'}
-            <i className={`fas fa-chevron-${expandedPauses ? 'down' : 'right'}`} />
-          </div>
+          <i className={`fas fa-chevron-${expandedPauses ? 'down' : 'right'}`} />
         </div>
-        {expandedPauses && (
-          <div className="metric-content">
+      </div>
+      {expandedPauses && (
+        <div className="metric-content">
           {loadingState.pause ? (
             <MetricLoading />
           ) : (
             <div className="feedback-box">
-            {typeof totalPauses !== 'number' && (
-              <p>Pause analytics were not recorded for this session.</p>
-            )}
-            {typeof totalPauses === 'number' && pausePositive && (
-              <p>
-                You used {totalPauses} pauses{totalPauseTime !== null && ` (total ${formatSeconds(totalPauseTime)})`}
-                {longestPause !== null && `, longest ${formatSeconds(longestPause)}`}. This keeps phrasing natural.
-              </p>
-            )}
-            {typeof totalPauses === 'number' && !pausePositive && (
-              <>
-                {totalPauses === 0 ? (
-                  <p>No pauses detected. Insert breath breaks at key transitions to let your message land.</p>
-                ) : (
-                  <p>
-                    {totalPauses} pauses detected{longestPause !== null && `; the longest stretched to ${formatSeconds(longestPause)}`}. Tighten transitions and rehearse with a beat timer to reduce filler silences.
-                  </p>
-                )}
-                {pausesList.length > 0 && (
-                  <ul style={{ marginTop: '0.5rem', paddingLeft: '1.25rem', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                    {pausesList.slice(0, 4).map((pause, idx) => {
-                      const pauseStart = typeof pause.start === 'number' ? formatSeconds(pause.start) : '--'
-                      const pauseDuration = typeof pause.duration === 'number' ? formatSeconds(pause.duration) : '--'
-                      return (
-                        <li key={idx}>
-                          Pause at {pauseStart} lasting {pauseDuration}
+              {typeof totalPauses !== 'number' && (
+                <p>Pause analytics were not recorded for this session.</p>
+              )}
+              {typeof totalPauses === 'number' && pausePositive && (
+                <p>
+                  You used {totalPauses} pauses{totalPauseTime !== null && ` (total ${formatSeconds(totalPauseTime)})`}
+                  {longestPause !== null && `, longest ${formatSeconds(longestPause)}`}. This keeps phrasing natural.
+                </p>
+              )}
+              {typeof totalPauses === 'number' && !pausePositive && (
+                <>
+                  {totalPauses === 0 ? (
+                    <p>No pauses detected. Insert breath breaks at key transitions to let your message land.</p>
+                  ) : (
+                    <p>
+                      {totalPauses} pauses detected{longestPause !== null && `; the longest stretched to ${formatSeconds(longestPause)}`}. Tighten transitions and rehearse with a beat timer to reduce filler silences.
+                    </p>
+                  )}
+                  {pausesList.length > 0 && (
+                    <ul style={{ marginTop: '0.5rem', paddingLeft: '1.25rem', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                      {pausesList.slice(0, 4).map((pause, idx) => {
+                        const pauseStart = typeof pause.start === 'number' ? formatSeconds(pause.start) : '--'
+                        const pauseDuration = typeof pause.duration === 'number' ? formatSeconds(pause.duration) : '--'
+                        return (
+                          <li key={idx}>
+                            Pause at {pauseStart} lasting {pauseDuration}
+                          </li>
+                        )
+                      })}
+                      {pausesList.length > 4 && (
+                        <li style={{ fontStyle: 'italic', color: 'var(--text-tertiary)' }}>
+                          +{pausesList.length - 4} more pauses detected
                         </li>
-                      )
-                    })}
-                    {pausesList.length > 4 && (
-                      <li style={{ fontStyle: 'italic', color: 'var(--text-tertiary)' }}>
-                        +{pausesList.length - 4} more pauses detected
-                      </li>
-                    )}
-                  </ul>
-                )}
-              </>
-            )}
+                      )}
+                    </ul>
+                  )}
+                </>
+              )}
             </div>
           )}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
+    </div>
   )
 
   return (

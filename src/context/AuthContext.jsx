@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import { signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from 'firebase/auth'
-import { auth, googleProvider } from '../config/firebase'
+import { auth, googleProvider } from '../lib/firebase'
 
 const AuthContext = createContext()
 
@@ -18,6 +18,8 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     // Check for redirect result first
+    // Try to resolve redirect sign-ins, but do NOT change `loading` here.
+    // `onAuthStateChanged` will reliably fire and should control the loading flag
     getRedirectResult(auth)
       .then((result) => {
         if (result) {
@@ -28,12 +30,10 @@ export const AuthProvider = ({ children }) => {
       .catch((error) => {
         console.error('Redirect result error:', error)
       })
-      .finally(() => {
-        setLoading(false)
-      })
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user)
+      // Ensure loading is turned off once auth state is known
       setLoading(false)
     })
 

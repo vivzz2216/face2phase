@@ -18,18 +18,14 @@ ENV/
 *.db
 *.sqlite
 *.sqlite3
+storage/db/
 
 # Logs
 *.log
 face2phrase.log
 
-# Uploads
-uploads/*
-!uploads/.gitkeep
-
-# Reports
-reports/*
-!reports/.gitkeep
+# Storage (user-generated files)
+storage/
 
 # Models cache
 models_cache/*
@@ -58,6 +54,7 @@ build/
 htmlcov/
 .tox/
 .coverage.*
+testsprite_tests/
 
 # Temporary files
 *.tmp
@@ -65,14 +62,6 @@ htmlcov/
 *.bak
 *.swp
 
-# Documentation (keep only README.md)
-# EXECUTIVE_SUMMARY.md
-# CODE_REVIEW_REPORT.md
-# FIXES_SUMMARY.md
-# TEST_COVERAGE_SUMMARY.md
-
-# Test files
-test_*.py
-*_test.py
-testsprite_tests/
-
+# Old directories (now moved to storage)
+uploads/
+reports/

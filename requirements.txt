@@ -4,8 +4,9 @@ uvicorn[standard]>=0.24.0
 python-multipart>=0.0.6
 
 # AI Models - Updated for better compatibility
-openai-whisper>=20231117
+openai-whisper>=20231117  # Audio transcription (Whisper)
 deepface>=0.0.79
+tf-keras>=2.15.0  # Required for DeepFace/TensorFlow compatibility
 opencv-python>=4.8.0
 spacy>=3.7.0
 transformers>=4.35.0
