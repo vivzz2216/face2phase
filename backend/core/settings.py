@@ -13,21 +13,25 @@ REPORTS_DIR = STORAGE_DIR / "reports"
 REPORTS_JSON_DIR = REPORTS_DIR / "json"
 REPORTS_PDF_DIR = REPORTS_DIR / "pdf"
 THUMBNAIL_DIR = REPORTS_DIR / "thumbnails"
-# Backwards compatibility: REPORTS_DIR points to JSON directory
-REPORTS_DIR = REPORTS_JSON_DIR
 EXPORTS_DIR = STORAGE_DIR / "exports"
 DB_DIR = STORAGE_DIR / "db"
 
-# Create directories if they don't exist
+# Create directories if they don't exist (in correct order)
 STORAGE_DIR.mkdir(exist_ok=True)
 UPLOAD_DIR.mkdir(exist_ok=True)
 MODELS_DIR.mkdir(exist_ok=True)
-REPORTS_DIR.mkdir(exist_ok=True)
+# Create base reports directory first
+REPORTS_BASE_DIR = STORAGE_DIR / "reports"
+REPORTS_BASE_DIR.mkdir(exist_ok=True)
+# Then create subdirectories
 REPORTS_JSON_DIR.mkdir(exist_ok=True)
 REPORTS_PDF_DIR.mkdir(exist_ok=True)
 THUMBNAIL_DIR.mkdir(exist_ok=True)
 EXPORTS_DIR.mkdir(exist_ok=True)
 DB_DIR.mkdir(exist_ok=True)
+
+# Backwards compatibility: REPORTS_DIR points to JSON directory
+REPORTS_DIR = REPORTS_JSON_DIR
 
 # File upload settings
 MAX_FILE_SIZE = 500 * 1024 * 1024  # 500MB
