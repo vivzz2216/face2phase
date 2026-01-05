@@ -89,7 +89,11 @@ This will download approximately 50MB of language data.
 The application uses NLTK for natural language processing. Download required data:
 
 ```bash
+# Download basic NLTK data
 python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('averaged_perceptron_tagger')"
+
+# Download pronunciation data (required for speech analysis)
+python -c "import nltk; nltk.download('cmudict')"
 ```
 
 ### 6. Set Up Environment Variables
