@@ -139,7 +139,7 @@ Open a new terminal window (keep the backend terminal with venv activated), navi
 npm install
 ```
 
-This will install all React/Node.js dependencies for the frontend.
+This will install all React/Node.js dependencies for the frontend, including GSAP for animations.
 
 ⏱️ **Note:** This may take a few minutes.
 
