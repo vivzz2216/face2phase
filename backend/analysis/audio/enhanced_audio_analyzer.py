@@ -364,7 +364,7 @@ class EnhancedAudioAnalyzer:
             
             result = self.whisper_model.transcribe(
                 audio_data,
-                word_timestamps=True,
+                word_timestamps=False,
                 verbose=False,
                 # Core settings
                 language=WHISPER_LANGUAGE,

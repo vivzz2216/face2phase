@@ -175,7 +175,7 @@ class AudioAnalyzer:
                 
                 # Transcribe using audio data instead of file path
                 logger.info("Transcribing audio data...")
-                result = self.whisper_model.transcribe(audio_data)
+                result = self.whisper_model.transcribe(audio_data, word_timestamps=False)
                 
             except Exception as librosa_error:
                 logger.warning(f"Librosa approach failed: {librosa_error}")
@@ -191,14 +191,14 @@ class AudioAnalyzer:
                 
                 # Try different path formats for Windows compatibility
                 try:
-                    result = self.whisper_model.transcribe(str(audio_path_abs))
+                    result = self.whisper_model.transcribe(str(audio_path_abs), word_timestamps=False)
                 except Exception as e1:
                     logger.warning(f"First attempt failed: {e1}")
                     # Try with forward slashes
                     try:
                         path_str = str(audio_path_abs).replace('\\', '/')
                         logger.info(f"Trying with forward slashes: {path_str}")
-                        result = self.whisper_model.transcribe(path_str)
+                        result = self.whisper_model.transcribe(path_str, word_timestamps=False)
                     except Exception as e2:
                         logger.warning(f"Second attempt failed: {e2}")
                         # Try copying to a simpler path
@@ -208,7 +208,7 @@ class AudioAnalyzer:
                         temp_audio = temp_dir / f"temp_audio_{audio_path_abs.stem}.wav"
                         logger.info(f"Copying to temp location: {temp_audio}")
                         shutil.copy2(audio_path_abs, temp_audio)
-                        result = self.whisper_model.transcribe(str(temp_audio))
+                        result = self.whisper_model.transcribe(str(temp_audio), word_timestamps=False)
                         # Clean up temp file
                         temp_audio.unlink()
             
