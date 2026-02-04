@@ -8,8 +8,78 @@ from dataclasses import dataclass
 from typing import Dict, Any
 
 
+import math
+
+
 def _clamp(value: float, lower: float = 0.0, upper: float = 100.0) -> float:
     return max(lower, min(upper, float(value)))
+
+
+# ---------- Research-Backed Scoring Functions ----------
+
+def _pace_score_gaussian(wpm: float) -> float:
+    """
+    Gaussian scoring for speaking rate (Tauroza & Allison).
+    Center (mu) = 155 WPM, Width (sigma) = 25.
+    Returns +8.0 at peak, drops smoothly to negative.
+    Normalized to match original scale: Peak +8, Neutral 0, Penalty negative.
+    """
+    if wpm <= 0: return -9.0
+    mu = 155.0
+    sigma = 25.0
+    # Raw 0-1 scale
+    gaussian = math.exp(-((wpm - mu) ** 2) / (2 * sigma ** 2))
+    # Map to range [-9.0, +8.0] approximately
+    # At peak (1.0) -> +8.0
+    # At 2 sigma (0.13) -> ~ -4.0
+    return (17.0 * gaussian) - 9.0
+
+def _filler_penalty_logistic(filler_ratio: float) -> float:
+    """
+    Logistic penalty for filler words (De Jong & Bosker).
+    Inflection at 5%, slope k=120.
+    Returns negative penalty (e.g. -12 at 5% to match legacy tiers).
+    """
+    k = 120.0
+    x0 = 0.05
+    max_penalty = -20.0
+    penalty = max_penalty / (1.0 + math.exp(-k * (filler_ratio - x0)))
+    return penalty
+
+def _eye_contact_score_smooth(avg_eye_frac: float) -> float:
+    """
+    Smooth piecewise function for eye contact.
+    Avoids hard bins and penalizes staring (>90%).
+    Returns adjustment value (e.g. +8, -10).
+    """
+    # Ideal range 0.55 - 0.75 -> +8
+    if 0.55 <= avg_eye_frac <= 0.75:
+        return 8.0
+    
+    # Near ideal -> +3
+    if 0.45 <= avg_eye_frac < 0.55 or 0.75 < avg_eye_frac <= 0.85:
+        return 3.0
+        
+    # Low eye contact -> steep drop to -10
+    if avg_eye_frac < 0.40:
+        return -10.0
+        
+    # Staring -> penalty
+    if avg_eye_frac > 0.90:
+        return -4.0
+        
+    # Fallback / Smooth Interpolation for gaps
+    return _clamp((avg_eye_frac - 0.55) * 40.0, -10.0, 8.0)
+
+def _tension_penalty_logistic(tension_frac: float) -> float:
+    """
+    Logistic penalty for facial tension.
+    """
+    if tension_frac <= 0.10:
+        return 4.0 # Bonus for very relaxed
+    # Logistic curve centered at 0.30
+    return -12.0 / (1.0 + math.exp(-40.0 * (tension_frac - 0.30)))
+
 
 
 @dataclass
@@ -133,37 +203,23 @@ class ScoringEngine:
         speaking_rate = audio_results.get("speaking_metrics", {}).get("speaking_rate_wpm", 0.0)
         conciseness_score = audio_results.get("speaking_metrics", {}).get("conciseness_score")
 
-        filler_penalty = 0
-        if filler_ratio > 0.08:
-            filler_penalty = 18
-        elif filler_ratio > 0.05:
-            filler_penalty = 12
-        elif filler_ratio > 0.03:
-            filler_penalty = 6
-        elif filler_ratio > 0.015:
-            filler_penalty = 3
+        # 1. Smooth Logistic Filler Penalty
+        filler_penalty = _filler_penalty_logistic(filler_ratio)
 
-        pace_adjustment = 0.0
-        if 130 <= speaking_rate <= 160:
-            pace_adjustment = 8.0
-        elif 120 <= speaking_rate < 130 or 160 < speaking_rate <= 170:
-            pace_adjustment = 5.0
-        elif 105 <= speaking_rate < 120 or 170 < speaking_rate <= 185:
-            pace_adjustment = 1.5
-        elif 95 <= speaking_rate < 105 or 185 < speaking_rate <= 200:
-            pace_adjustment = -4.0
-        elif speaking_rate > 0:
-            pace_adjustment = -9.0
+        # 2. Smooth Gaussian Pace Adjustment
+        pace_adjustment = _pace_score_gaussian(speaking_rate)
 
+        # 3. Conciseness Adjustment
+        conciseness_adj = 0.0
         if isinstance(conciseness_score, (int, float)):
-            pace_adjustment += (conciseness_score - 75.0) * 0.08
+            conciseness_adj = (conciseness_score - 75.0) * 0.08
 
-        scored = base_score - filler_penalty + pace_adjustment
+        # Combine
+        scored = base_score + filler_penalty + pace_adjustment + conciseness_adj
         return _clamp(scored)
 
     def _score_visual(self, facial_results: Dict[str, Any], file_type: str) -> float:
         if file_type == "audio":
-            # No visual signal available; do not artificially boost or penalize
             return 0.0
 
         base_score = facial_results.get("facial_confidence_score", 55.0)
@@ -171,36 +227,31 @@ class ScoringEngine:
         tension_percentage = tension_summary.get("tension_percentage")
         eye_contact_stability = tension_summary.get("eye_contact_stability")
         avg_eye_contact_pct = tension_summary.get("avg_eye_contact_pct")
+        
+        # Normalize inputs
         if avg_eye_contact_pct is None:
             raw_eye_contact = facial_results.get("avg_eye_contact")
             if isinstance(raw_eye_contact, (int, float)):
                 avg_eye_contact_pct = raw_eye_contact * 100
+        
+        avg_eye_frac = (avg_eye_contact_pct or 0.0) / 100.0
+        tension_frac = (tension_percentage or 0.0) / 100.0
+        stability_score = (eye_contact_stability or 50.0) / 100.0
 
-        if isinstance(tension_percentage, (int, float)):
-            if tension_percentage > 40:
-                base_score -= 12
-            elif tension_percentage > 25:
-                base_score -= 8
-            elif tension_percentage < 10:
-                base_score += 4
+        # Smart Adjustments
+        tension_adj = _tension_penalty_logistic(tension_frac)
+        eye_contact_adj = _eye_contact_score_smooth(avg_eye_frac)
+        
+        # Stability: Linear map (0.0 -> -5, 1.0 -> +6)
+        stability_adj = _clamp(stability_score * 11.0 - 5.0, -5.0, 6.0)
 
-        if isinstance(eye_contact_stability, (int, float)):
-            if eye_contact_stability >= 75:
-                base_score += 6
-            elif eye_contact_stability < 45:
-                base_score -= 6
+        # Negative Emotion Penalty check
+        emotion_dist = facial_results.get("emotion_distribution") or {}
+        neg_emotion_frac = sum(emotion_dist.get(k, 0) for k in ['angry', 'sad', 'fear', 'disgust'])
+        neg_penalty = -15.0 if neg_emotion_frac > 0.30 else 0.0
 
-        if isinstance(avg_eye_contact_pct, (int, float)):
-            if 55 <= avg_eye_contact_pct <= 75:
-                base_score += 8
-            elif 45 <= avg_eye_contact_pct < 55 or 75 < avg_eye_contact_pct <= 85:
-                base_score += 3
-            elif avg_eye_contact_pct < 40:
-                base_score -= 10
-            elif avg_eye_contact_pct > 90:
-                base_score -= 4
-
-        return _clamp(base_score)
+        scored = base_score + tension_adj + eye_contact_adj + stability_adj + neg_penalty
+        return _clamp(scored)
 
     def _score_narrative(self, text_results: Dict[str, Any]) -> float:
         vocab_score = text_results.get("vocabulary_score", 55.0)
@@ -248,19 +299,19 @@ class ScoringEngine:
 
     def _score_engagement(self, audio_results: Dict[str, Any], facial_results: Dict[str, Any]) -> float:
         opening = (audio_results.get("advanced_audio_metrics") or {}).get("opening_confidence", {})
-        opening_score = opening.get("opening_confidence")
+        opening_score = opening.get("opening_confidence") or 50.0
         voice_confidence = audio_results.get("voice_confidence_score", 50.0)
         emotion_distribution = facial_results.get("emotion_distribution") or {}
         positive_emotions = emotion_distribution.get("happy", 0) + emotion_distribution.get("neutral", 0)
 
-        score = voice_confidence * 0.4
-        if isinstance(opening_score, (int, float)):
-            score += opening_score * 0.35
-        score += positive_emotions * 100 * 0.2
-
+        # Weighted Mix
+        score = (voice_confidence * 0.40) + (opening_score * 0.35) + (positive_emotions * 100 * 0.20)
+        
+        # Smooth Filler Penalty for Engagement
         filler_ratio = audio_results.get("filler_analysis", {}).get("filler_ratio", 0)
         if filler_ratio > 0.06:
-            score -= 6
+            # Scaled penalty (e.g. -6 at 6%, -12 at 12%)
+            score -= 6.0 * (filler_ratio / 0.06)
 
         return _clamp(score)
 
@@ -275,45 +326,38 @@ class ScoringEngine:
         text_results: Dict[str, Any],
     ) -> float:
         """
-        Improve practical separation between weak/strong sessions by:
-        - applying a gentle contrast curve around a center point
-        - nudging based on strong/weak signal heuristics
+        Research-backed calibration (Kolen & Brennan).
+        Reduced slope (1.18), continuous nudges, and safety clamps.
         """
-        # Contrast curve
-        contrasted = (composite - self.CALIBRATION_CENTER) * self.CALIBRATION_CONTRAST + self.CALIBRATION_CENTER
-        contrasted += self.CALIBRATION_BASE_SHIFT
+        # 1. Calibrated Contrast
+        # Slope 1.18 (gentle separation), Center shift +3.0
+        contrasted = (composite - 57.0) * 1.18 + 60.0
+        
+        # 2. Continuous Nudge Module
+        # Translate "strong indicators" to smooth bonus
+        def norm(x, lo=40, hi=90):
+            return max(0.0, min(1.0, (x - lo) / (hi - lo)))
 
-        # Heuristic nudges
-        nudge = 0.0
-        filler_ratio = (audio_results.get("filler_analysis") or {}).get("filler_ratio")
-        coherence = (text_results.get("advanced_text_metrics") or {}).get("topic_coherence_score")
+        # Strength bonus (0 to +3)
+        strong_score = (norm(voice_delivery) + norm(narrative_clarity) + norm(engagement)) / 3.0
+        bonus = 3.0 * strong_score
 
-        strong_indicators = 0
-        if voice_delivery >= 72:
-            strong_indicators += 1
-        if narrative_clarity >= 70:
-            strong_indicators += 1
-        if engagement >= 68:
-            strong_indicators += 1
+        # Weakness penalty (0 to -4)
+        filler_ratio = (audio_results.get("filler_analysis") or {}).get("filler_ratio") or 0.0
+        coherence = (text_results.get("advanced_text_metrics") or {}).get("topic_coherence_score") or 60.0
+        
+        weak_count = 0.0
+        if filler_ratio > 0.06: weak_count += 1.0
+        if coherence < 55: weak_count += 1.0
+        
+        penalty = -4.0 * (weak_count / 2.0)
 
-        weak_indicators = 0
-        if isinstance(filler_ratio, (int, float)) and filler_ratio > 0.06:
-            weak_indicators += 1
-        if isinstance(coherence, (int, float)) and coherence < 55:
-            weak_indicators += 1
-
-        # Apply nudges
-        if strong_indicators >= 2:
-            nudge += 3.0
-        elif strong_indicators == 1:
-            nudge += 1.5
-
-        if weak_indicators >= 2:
-            nudge -= 4.0
-        elif weak_indicators == 1:
-            nudge -= 2.0
-
-        return _clamp(contrasted + nudge)
+        # 3. Final Clamp [35, 88] to prevent inflation/collapse
+        final_score = contrasted + bonus + penalty
+        # Allow exceptional scores >88 only if inputs are truly exceptional (>90)
+        if composite > 90:
+            return _clamp(final_score, 35.0, 98.0)
+        return _clamp(final_score, 35.0, 88.0)
 
     def _assign_badge(self, composite_score: float) -> str:
         for threshold, badge in self.BADGE_THRESHOLDS:

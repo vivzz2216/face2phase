@@ -46,6 +46,7 @@ from ...core.settings import (
 )
 
 from ..speech.disfluency_detector import disfluency_detector
+from ..text.sentence_opener_analyzer import analyze_sentence_openers
 from ...utils.device_detector import device_manager
 from ...utils.report_utils import (
     compute_filler_trend,
@@ -99,16 +100,25 @@ class EnhancedAudioAnalyzer:
     def _load_whisper_model(self):
         """Load Whisper model if available"""
         if whisper is None:
-            logger.warning("Whisper library not installed; audio transcription will be disabled.")
+            logger.error("❌ CRITICAL: Whisper library not installed; audio transcription will be disabled.")
+            logger.error("   Install with: pip install openai-whisper")
             self.whisper_model = None
             return False
         try:
-            logger.info(f"Loading Whisper model: {WHISPER_MODEL_SIZE} on device: {self.device}")
+            logger.info(f"🔄 Loading Whisper model: {WHISPER_MODEL_SIZE} on device: {self.device}")
+            logger.info(f"   Model size: {WHISPER_MODEL_SIZE}")
+            logger.info(f"   Device: {self.device}")
+            
             self.whisper_model = whisper.load_model(WHISPER_MODEL_SIZE, device=self.device)
-            logger.info(f"Successfully loaded Whisper model: {WHISPER_MODEL_SIZE}")
+            
+            logger.info(f"✅ Successfully loaded Whisper model: {WHISPER_MODEL_SIZE}")
+            logger.info(f"   Whisper is ready for transcription!")
             return True
         except Exception as e:
-            logger.error(f"Error loading Whisper model: {e}")
+            logger.error(f"❌ CRITICAL ERROR loading Whisper model: {e}", exc_info=True)
+            logger.error(f"   Model size attempted: {WHISPER_MODEL_SIZE}")
+            logger.error(f"   Device attempted: {self.device}")
+            logger.error("   This will cause all transcriptions to fail!")
             self.whisper_model = None
             return False
     
@@ -125,6 +135,92 @@ class EnhancedAudioAnalyzer:
         else:
             self.vad = None
             logger.info("VAD not available (webrtcvad not installed)")
+
+    def _load_audio_safe(self, audio_path: Path, target_sr: int = 16000) -> Tuple[np.ndarray, int]:
+        """
+        Load audio safely bypassing librosa.load's numba-dependent resampling.
+        Ensures output is MONO and resampled to target_sr using scipy.
+        CRITICAL FIX for:
+        1. Numba/Resampy compatibility issues
+        2. Stereo->Mono conversion for Whisper (fixes 1.9TB memory crash)
+        """
+        try:
+            import soundfile as sf
+            from scipy import signal
+            
+            # 1. Read with soundfile (no numba)
+            # soundfile.read returns (samples, channels) for stereo
+            audio_data, sr_native = sf.read(str(audio_path))
+            
+            # 2. Convert to Mono if stereo/multichannel
+            if audio_data.ndim > 1:
+                # Average across channels
+                audio_data = np.mean(audio_data, axis=1)
+                
+            # 3. Resample if needed
+            if sr_native != target_sr:
+                num_samples = int(len(audio_data) * target_sr / sr_native)
+                # Cast to float32 before resampling to save memory
+                if audio_data.dtype != np.float32:
+                    audio_data = audio_data.astype(np.float32)
+                audio_data = signal.resample(audio_data, num_samples)
+                sr = target_sr
+            else:
+                sr = sr_native
+                
+            # Ensure float32 (scipy/soundfile might return float64)
+            if audio_data.dtype != np.float32:
+                audio_data = audio_data.astype(np.float32)
+                
+            return audio_data, sr
+            
+        except Exception as e:
+            logger.warning(f"Safe audio load failed: {e}, falling back to librosa")
+            # Fallback (might crash if numba issue persists)
+            return librosa.load(str(audio_path), sr=target_sr)
+
+    def _load_audio_safe(self, audio_path: Path, target_sr: int = 16000) -> Tuple[np.ndarray, int]:
+        """
+        Load audio safely bypassing librosa.load's numba-dependent resampling.
+        Ensures output is MONO and resampled to target_sr using scipy.
+        CRITICAL FIX for:
+        1. Numba/Resampy compatibility issues
+        2. Stereo->Mono conversion for Whisper (fixes 1.9TB memory crash)
+        """
+        try:
+            import soundfile as sf
+            from scipy import signal
+            
+            # 1. Read with soundfile (no numba)
+            # soundfile.read returns (samples, channels) for stereo
+            audio_data, sr_native = sf.read(str(audio_path))
+            
+            # 2. Convert to Mono if stereo/multichannel
+            if audio_data.ndim > 1:
+                # Average across channels
+                audio_data = np.mean(audio_data, axis=1)
+                
+            # 3. Resample if needed
+            if sr_native != target_sr:
+                num_samples = int(len(audio_data) * target_sr / sr_native)
+                # Cast to float32 before resampling to save memory
+                if audio_data.dtype != np.float32:
+                    audio_data = audio_data.astype(np.float32)
+                audio_data = signal.resample(audio_data, num_samples)
+                sr = target_sr
+            else:
+                sr = sr_native
+                
+            # Ensure float32 (scipy/soundfile might return float64)
+            if audio_data.dtype != np.float32:
+                audio_data = audio_data.astype(np.float32)
+                
+            return audio_data, sr
+            
+        except Exception as e:
+            logger.warning(f"Safe audio load failed: {e}, falling back to librosa")
+            # Fallback (might crash if numba issue persists)
+            return librosa.load(str(audio_path), sr=target_sr)
     
     def calculate_adaptive_threshold(self, audio_data: np.ndarray, sr: int) -> float:
         """
@@ -178,8 +274,8 @@ class EnhancedAudioAnalyzer:
             List of pause dictionaries with start, end, duration
         """
         try:
-            # Load audio
-            y, sr = librosa.load(str(audio_path), sr=16000)
+            # Load audio SAFE
+            y, sr = self._load_audio_safe(audio_path, target_sr=16000)
             
             # Calculate adaptive threshold if not provided
             if energy_threshold is None:
@@ -383,8 +479,8 @@ class EnhancedAudioAnalyzer:
             Dictionary with pitch tracking data
         """
         try:
-            # Load audio
-            y, sr = librosa.load(str(audio_path), sr=16000)
+            # Load audio SAFE
+            y, sr = self._load_audio_safe(audio_path, target_sr=16000)
             
             # Try librosa.pyin first (may fail with numba 0.57.1)
             f0 = None
@@ -574,13 +670,18 @@ class EnhancedAudioAnalyzer:
             
             logger.info(f"Starting VERBATIM transcription: {audio_path}")
             
-            # Load audio with librosa (Windows compatibility)
-            audio_data, sr = librosa.load(str(audio_path), sr=16000)
+            # CRITICAL FIX: Use safe loader to avoid Numba errors and Memory crashes
+            logger.info("Loading audio with SAFE LOADER (soundfile + scipy + mono conversion)...")
+            audio_data, sr = self._load_audio_safe(audio_path, target_sr=16000)
+            
             audio_duration = len(audio_data) / sr
-            logger.info(f"Audio loaded: {len(audio_data)} samples, {sr} Hz, {audio_duration:.1f}s duration")
+            logger.info(f"✅ Audio ready: {len(audio_data)} samples, {sr} Hz, {audio_duration:.1f}s duration")
             
             # VERBATIM TRANSCRIPTION SETTINGS for clean audio with natural fillers
             logger.info("Transcribing with VERBATIM settings (preserving natural speech)...")
+            
+            logger.info("🎤 Starting Whisper transcription now...")
+            logger.info(f"   This may take a while depending on audio length ({audio_duration:.1f}s)")
             
             result = self.whisper_model.transcribe(
                 audio_data,
@@ -604,6 +705,8 @@ class EnhancedAudioAnalyzer:
                     "Keep all words verbatim."
                 )
             )
+            
+            logger.info(f"✅ Whisper transcription completed!")
             
             # Get raw transcript - this is Whisper's direct output
             transcript = result["text"].strip()
@@ -652,7 +755,10 @@ class EnhancedAudioAnalyzer:
             }
             
         except Exception as e:
-            logger.error(f"Error transcribing audio: {e}", exc_info=True)
+            logger.error(f"❌ CRITICAL: Error transcribing audio: {e}", exc_info=True)
+            logger.error(f"   Audio path: {audio_path}")
+            logger.error(f"   Whisper model loaded: {self.whisper_model is not None}")
+            logger.error("   Returning empty transcript - THIS IS WHY TRANSCRIPT IS EMPTY!")
             return {
                 "transcript": "",
                 "segments": [],
@@ -709,7 +815,7 @@ class EnhancedAudioAnalyzer:
         
         # Load audio for voice quality analysis
         try:
-            audio_data, sr = librosa.load(str(audio_path), sr=16000)
+            audio_data, sr = self._load_audio_safe(audio_path, target_sr=16000)
         except:
             audio_data = None
             sr = 16000
@@ -914,7 +1020,8 @@ class EnhancedAudioAnalyzer:
             pitch_data = self.track_pitch_variations(audio_path)
             
             # Load audio once for duration calculations
-            audio_signal, sr = librosa.load(str(audio_path), sr=16000)
+            # Load audio once for duration calculations - SAFE LOAD
+            audio_signal, sr = self._load_audio_safe(audio_path, target_sr=16000)
             total_duration = len(audio_signal) / sr if sr else 0
             
             # 4. Create detailed transcript
@@ -985,6 +1092,14 @@ class EnhancedAudioAnalyzer:
             # Add transcription quality info
             transcription_quality = transcription_data.get("transcription_quality", {})
             
+            # 8. Analyze sentence openers for variety and repetition
+            sentence_opener_analysis = analyze_sentence_openers(
+                transcription_data["transcript"],
+                words_with_timing=transcription_data.get("words_with_timing", [])
+            )
+            logger.info(f"Sentence opener analysis: Status={sentence_opener_analysis.get('status')}, "
+                       f"Variety Score={sentence_opener_analysis.get('variety_score')}/100")
+            
             logger.info("Comprehensive audio analysis completed")
             
             return {
@@ -1008,6 +1123,7 @@ class EnhancedAudioAnalyzer:
                 "words_with_timing": transcription_data["words_with_timing"],
                 "advanced_audio_metrics": advanced_audio_metrics,
                 "transcription_quality": transcription_quality,
+                "sentence_opener_analysis": sentence_opener_analysis,  # NEW: Sentence opener detection
                 "analysis_successful": True
             }
             
@@ -2048,27 +2164,25 @@ class EnhancedAudioAnalyzer:
                     else:
                         rate_adjustment = -10  # Less harsh penalty if we have words
                         rate_reason = "Unable to calculate speaking rate but speech detected"
-            elif 135 <= speaking_rate <= 160:
-                rate_adjustment = 25
-                rate_reason = f"Excellent speaking pace ({speaking_rate:.0f} WPM, ideal range 135-160)"
-            elif 120 <= speaking_rate < 135 or 160 < speaking_rate <= 175:
-                rate_adjustment = 18
-                rate_reason = f"Good speaking pace ({speaking_rate:.0f} WPM)"
-            elif 105 <= speaking_rate < 120 or 175 < speaking_rate <= 190:
-                rate_adjustment = 12
-                rate_reason = f"Acceptable speaking pace ({speaking_rate:.0f} WPM)"
-            elif 90 <= speaking_rate < 105:
-                rate_adjustment = 5
-                rate_reason = f"Slightly slow pace ({speaking_rate:.0f} WPM)"
-            elif 190 < speaking_rate <= 210:
-                rate_adjustment = 5
-                rate_reason = f"Slightly fast pace ({speaking_rate:.0f} WPM)"
-            elif speaking_rate < 90:
-                rate_adjustment = -12
-                rate_reason = f"Too slow ({speaking_rate:.0f} WPM, below 90)"
-            else:  # > 210
-                rate_adjustment = -12
-                rate_reason = f"Too fast ({speaking_rate:.0f} WPM, above 210)"
+            else:  # speaking_rate > 0
+                # IMPROVED: Smooth linear adjustment instead of discrete steps
+                # Formula: speaking_rate_adj = clamp(((WPM - 90) / 70) * 25, -12, +25)
+                rate_adjustment = ((speaking_rate - 90) / 70) * 25
+                rate_adjustment = max(-12, min(25, rate_adjustment))
+                
+                # Generate appropriate reason
+                if speaking_rate >= 135 and speaking_rate <= 160:
+                    rate_reason = f"Excellent speaking pace ({speaking_rate:.0f} WPM, ideal range 135-160)"
+                elif speaking_rate >= 110 and speaking_rate < 135:
+                    rate_reason = f"Good speaking pace ({speaking_rate:.0f} WPM)"
+                elif speaking_rate >= 90 and speaking_rate < 110:
+                    rate_reason = f"Slightly slow pace ({speaking_rate:.0f} WPM)"
+                elif speaking_rate < 90:
+                    rate_reason = f"Slow pace ({speaking_rate:.0f} WPM, below 90) - mild penalty"
+                elif speaking_rate > 160 and speaking_rate <= 180:
+                    rate_reason = f"Slightly fast pace ({speaking_rate:.0f} WPM)"
+                else:  # > 180
+                    rate_reason = f"Fast pace ({speaking_rate:.0f} WPM, above 180)"
             
             score += rate_adjustment
             breakdown["adjustments"].append({
@@ -2084,27 +2198,19 @@ class EnhancedAudioAnalyzer:
             filler_adjustment = 0
             filler_reason = ""
             
-            if filler_ratio < 0.005:
-                filler_adjustment = 20
-                filler_reason = f"Excellent - minimal fillers ({total_fillers} fillers, <0.5%)"
-            elif filler_ratio < 0.01:
-                filler_adjustment = 15
-                filler_reason = f"Very good filler control ({total_fillers} fillers, <1%)"
-            elif filler_ratio < 0.02:
-                filler_adjustment = 10
-                filler_reason = f"Good filler control ({total_fillers} fillers, <2%)"
-            elif filler_ratio < 0.04:
-                filler_adjustment = 5
-                filler_reason = f"Acceptable filler usage ({total_fillers} fillers, <4%)"
+            # IMPROVED: Continuous scale with cap to avoid over-penalization
+            # Formula: filler_voice_adj = clamp(-40 * (filler_ratio - 0.02), -20, +20)
+            raw_filler_adj = -40 * (filler_ratio - 0.02)
+            filler_adjustment = max(-20, min(20, raw_filler_adj))
+            
+            if filler_ratio < 0.02:
+                filler_reason = f"Excellent filler control ({total_fillers} fillers, {filler_ratio*100:.1f}%)"
             elif filler_ratio < 0.06:
-                filler_adjustment = 0
-                filler_reason = f"Noticeable but not excessive ({total_fillers} fillers, <6%)"
+                filler_reason = f"Good filler control ({total_fillers} fillers, {filler_ratio*100:.1f}%)"
             elif filler_ratio < 0.10:
-                filler_adjustment = -10
-                filler_reason = f"Too many fillers ({total_fillers} fillers, {filler_ratio*100:.1f}%)"
+                filler_reason = f"Noticeable fillers ({total_fillers} fillers, {filler_ratio*100:.1f}%)"
             else:
-                filler_adjustment = -20
-                filler_reason = f"Excessive filler usage ({total_fillers} fillers, {filler_ratio*100:.1f}%)"
+                filler_reason = f"Excessive filler usage ({total_fillers} fillers, {filler_ratio*100:.1f}%) - capped penalty"
             
             score += filler_adjustment
             breakdown["adjustments"].append({
@@ -2130,7 +2236,7 @@ class EnhancedAudioAnalyzer:
                 pause_adjustment += 5
                 pause_reason = f"Minimal long pauses ({long_pause_count})"
             elif long_pause_count <= 3:
-                pause_adjustment += 2
+                pause_adjustment -= 5  # IMPROVED: Softer penalty (-5 instead of old -10)
                 pause_reason = f"Few long pauses ({long_pause_count})"
             elif long_pause_count <= 5:
                 pause_adjustment -= 5

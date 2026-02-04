@@ -18,14 +18,7 @@ PROTECTED_PHRASES = [
     'good day', 'good luck', 'good bye', 'goodbye',
     'thank you', 'thanks', 'please', 'excuse me',
     'how are you', 'nice to meet you', 'pleased to meet you',
-    'i am', 'i\'m', 'my name is', 'i come from',
-    'from', 'to', 'the', 'a', 'an', 'and', 'or', 'but',
-    'is', 'are', 'was', 'were', 'be', 'been', 'being',
-    'have', 'has', 'had', 'do', 'does', 'did',
-    'will', 'would', 'should', 'could', 'may', 'might',
-    'this', 'that', 'these', 'those', 'here', 'there',
-    'in', 'on', 'at', 'by', 'for', 'with', 'about', 'into',
-    'of', 'off', 'over', 'under', 'up', 'down', 'out'
+    'my name is', 'i come from',
 ]
 
 # Common basic-to-formal word mappings (only for words that are actually weak)
@@ -62,6 +55,141 @@ BASIC_TO_FORMAL = {
     'change': ['modify', 'alter', 'adjust', 'transform'],
 }
 
+# Phrase-level enhancements (more powerful - these match multi-word patterns)
+# Format: (pattern_regex, replacement_function, description)
+PHRASE_PATTERNS = [
+    # USER-REQUESTED SPECIFIC PATTERNS (HIGH PRIORITY)
+    (r'\ba topic which is\b',
+     'a topic called',
+     '"a topic which is" → "a topic called"'),
+    
+    (r'\bthese all\b',
+     'all these',
+     '"these all" → "all these"'),
+    
+    (r'\bvery old\b',
+     'ancient',
+     '"very old" → "ancient"'),
+    
+    (r'\bvery traditional\b',
+     'highly traditional',
+     '"very traditional" → "highly traditional"'),
+    
+    (r'\bdance form\b',
+     'dance style',
+     '"dance form" → "dance style"'),
+    
+    (r'\boriginated\b',
+     'started',
+     '"originated" → "started"'),
+    
+    (r'\bbasically\b',
+     'mainly',
+     '"basically" → "mainly"'),
+    
+    # Skill/Competency Phrases
+    (r'\b(I am |I\'m |I was |I\'ve been )?very good at\b', 
+     lambda m: f"{m.group(1) or ''}proficient in" if m.group(1) else "proficient in",
+     '"very good at" → "proficient in"'),
+    
+    (r'\b(I am |I\'m |I was )good at\b',
+     lambda m: "I excel at" if m.group(1).strip() in ["I am", "I'm"] else "I excelled at",
+     '"I am good at" → "I excel at"'),
+
+    
+    (r'\b(I am |I\'m )really good at\b',
+     lambda m: "I am highly skilled in",
+     '"I am really good at" → "I am highly skilled in"'),
+    
+    (r'\b(I have |I\'ve )good( knowledge| experience)? (of|in|with)\b',
+     lambda m: f"I possess strong{m.group(2) or ''} {m.group(3)}",
+     '"I have good knowledge of" → "I possess strong knowledge of"'),
+    
+    # Intensity/Degree Modifiers
+    (r'\bvery (important|essential|critical|vital)\b',
+     lambda m: f"crucial" if m.group(1) in ['important', 'essential'] else f"absolutely {m.group(1)}",
+     '"very important" → "crucial"'),
+    
+    (r'\bvery (big|large|huge)\b',
+     lambda m: "substantial" if m.group(1) == 'big' else "extensive",
+     '"very big" → "substantial"'),
+    
+    (r'\bvery (small|little|tiny)\b',
+     lambda m: "minimal",
+     '"very small" → "minimal"'),
+    
+    (r'\bvery (happy|pleased|satisfied)\b',
+     lambda m: "delighted" if m.group(1) == 'happy' else "highly satisfied",
+     '"very happy" → "delighted"'),
+    
+    (r'\breally (want|need|like)\b',
+     lambda m: f"strongly {'desire' if m.group(1) == 'want' else 'require' if m.group(1) == 'need' else 'appreciate'}",
+     '"really want" → "strongly desire"'),
+    
+    # Demonstrative Phrases  
+    (r'\b(I think|I believe) that\b',
+     lambda m: "I contend that" if 'think' in m.group(1) else "I am convinced that",
+     '"I think that" → "I contend that"'),
+    
+    (r'\bI would like to\b',
+     'I wish to',
+     '"I would like to" → "I wish to"'),
+    
+    (r'\bI want to\b',
+     'I aim to',
+     '"I want to" → "I aim to"'),
+    
+    # Capability Phrases
+    (r'\b(I can|I could) (easily |quickly )?(do|make|create|handle)\b',
+     lambda m: f"I am capable of {m.group(2) or ''}{m.group(3).rstrip('e') + 'ing'}",
+     '"I can do" → "I am capable of doing"'),
+    
+    (r'\b(I am able to|I\'m able to)\b',
+     'I am capable of',
+     '"I am able to" → "I am capable of"'),
+    
+    # Experience/Background
+    (r'\b(I have been|I\'ve been) (working|doing|studying)\b',
+     lambda m: f"I have {'worked' if m.group(2) == 'working' else 'engaged' if m.group(2) == 'doing' else 'studied'}",
+     '"I have been working" → "I have worked"'),
+    
+    (r'\b(I have|I\'ve) done (a lot of|lots of|many)\b',
+     lambda m: "I have completed numerous",
+     '"I have done a lot of" → "I have completed numerous"'),
+    
+    # Interest/Passion
+    (r'\b(I really|I) like (to )?\b',
+     lambda m: f"I am passionate about {m.group(2) or ''}",
+     '"I really like" → "I am passionate about"'),
+    
+    (r'\b(I am |I\'m )interested in\b',
+     lambda m: "I have a keen interest in",
+     '"I am interested in" → "I have a keen interest in"'),
+    
+    # General Improvements
+    (r'\ba lot of\b',
+     'numerous',
+     '"a lot of" → "numerous"'),
+    
+    (r'\blots of\b',
+     'many',
+     '"lots of" → "many"'),
+    
+    (r'\bkind of\b',
+     'somewhat',
+     '"kind of" → "somewhat"'),
+    
+    (r'\bsort of\b',
+     'rather',
+     '"sort of" → "rather"'),
+    
+    #  Demonstrative improvements
+    (r'\bthis is (a |an )?(good|great|nice)\b',
+     lambda m: f"this represents {'an' if m.group(1) == 'an ' else 'a'} {'excellent' if m.group(2) == 'good' else 'outstanding' if m.group(2) == 'great' else 'pleasant'}",
+     '"this is good" → "this represents an excellent"'),
+]
+
+
 class VocabularyEnhancer:
     """Suggests formal alternatives for basic words"""
     
@@ -89,6 +217,10 @@ class VocabularyEnhancer:
             # Find basic words in transcript
             basic_words_found = self._detect_basic_words(transcript)
             
+            logger.info(f"Vocabulary enhancer detected {len(basic_words_found)} words/phrases")
+            for item in basic_words_found[:5]:  # Log first 5
+                logger.info(f"  - '{item['word']}' (is_phrase: {item.get('is_phrase', False)})")
+            
             if not basic_words_found:
                 return {
                     'enhancements': [],
@@ -102,17 +234,24 @@ class VocabularyEnhancer:
             for word_data in basic_words_found:
                 word = word_data['word']
                 context = word_data['context']
-                formal_options = self._get_formal_alternatives(word, context)
+                
+                # Check if this is a phrase with a pre-computed suggestion
+                if word_data.get('is_phrase') and word_data.get('suggestion'):
+                    # For phrases, use the pre-computed suggestion
+                    formal_options = [word_data['suggestion']]
+                else:
+                    # For individual words, use the dictionary
+                    formal_options = self._get_formal_alternatives(word, context)
                 
                 if formal_options:
                     enhancements.append({
                         'word': word,
                         'context': context,
-                        'suggestions': formal_options,
-                        'reason': self._get_replacement_reason(word, formal_options[0])
+                        'suggestions': formal_options if isinstance(formal_options, list) else [formal_options],
+                        'reason': self._get_replacement_reason(word, formal_options[0] if isinstance(formal_options, list) else formal_options)
                     })
             
-            # Limit to most important suggestions
+            # Limit to most important suggestions  
             enhancements = enhancements[:10]
             
             return {
@@ -154,6 +293,34 @@ class VocabularyEnhancer:
             if is_protected:
                 continue
             
+            # PRIORITY 1: Check phrase patterns FIRST (more powerful)
+            for pattern, replacement, description in PHRASE_PATTERNS:
+                pattern_regex = re.compile(pattern, re.IGNORECASE)
+                matches = pattern_regex.finditer(sentence_original)
+                
+                for match in matches:
+                    matched_phrase = match.group()
+                    
+                    # Calculate replacement
+                    if callable(replacement):
+                        try:
+                            suggested_replacement = replacement(match)
+                        except Exception as e:
+                            logger.error(f"Error in replacement function: {e}")
+                            continue
+                    else:
+                        suggested_replacement = replacement
+                    
+                    # Avoid duplicates
+                    if not any(w['word'].lower() == matched_phrase.lower() and w['context'] == sentence_original for w in basic_words_found):
+                        basic_words_found.append({
+                            'word': matched_phrase,
+                            'context': sentence_original,
+                            'suggestion': suggested_replacement,
+                            'is_phrase': True
+                        })
+            
+            # PRIORITY 2: Check individual words (only if not already matched by phrases)
             for basic_word, formal_options in BASIC_TO_FORMAL.items():
                 # Check for exact word match
                 word_pattern = re.compile(r'\b' + re.escape(basic_word) + r'\b', re.IGNORECASE)
@@ -162,6 +329,16 @@ class VocabularyEnhancer:
                 for match in matches:
                     word = match.group()
                     word_lower = word.lower()
+                    
+                    # Skip if this word is part of a phrase we already matched
+                    already_matched_in_phrase = False
+                    for found_item in basic_words_found:
+                        if found_item.get('is_phrase') and word_lower in found_item['word'].lower():
+                            already_matched_in_phrase = True
+                            break
+                    
+                    if already_matched_in_phrase:
+                        continue
                     
                     # Skip if word is part of a protected phrase
                     # Check surrounding words (2 words before and after)
@@ -194,7 +371,8 @@ class VocabularyEnhancer:
                     if not any(w['word'].lower() == word.lower() and w['context'] == sentence_original for w in basic_words_found):
                         basic_words_found.append({
                             'word': word,
-                            'context': sentence_original
+                            'context': sentence_original,
+                            'is_phrase': False
                         })
         
         return basic_words_found

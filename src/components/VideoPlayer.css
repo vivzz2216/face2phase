@@ -84,13 +84,18 @@
 }
 
 .speed-select {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.3);
   color: white;
   padding: 0.2rem 0.4rem;
   border-radius: 4px;
   cursor: pointer;
   font-size: 0.8rem;
+}
+
+.speed-select option {
+  background: #1a1a1a;
+  color: white;
 }
 
 .progress-bar-container {
@@ -100,6 +105,13 @@
   border-radius: 3px;
   cursor: pointer;
   position: relative;
+  pointer-events: all;
+  transition: height 0.2s;
+}
+
+.progress-bar-container:hover {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.4);
 }
 
 .progress-bar {
@@ -107,6 +119,7 @@
   background: var(--accent-primary);
   border-radius: 3px;
   transition: width 0.1s;
+  pointer-events: none;
 }
 
 @media (max-width: 768px) {
@@ -115,4 +128,3 @@
     border-radius: 12px;
   }
 }
-

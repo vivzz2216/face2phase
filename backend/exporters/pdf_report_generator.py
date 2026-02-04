@@ -297,11 +297,11 @@ class PDFWordReportGenerator:
             
             # Strict Evaluation Breakdown (if available)
             if 'strict_evaluation' in analysis_data:
-                strict_eval = analysis_data.get('strict_evaluation', {})
+                strict_eval = analysis_data.get('strict_evaluation') or {}
                 scores = strict_eval.get('scores', {})
                 
                 # Check if we have valid non-zero scores
-                valid_scores = any(scores.get(k, 0) > 0 for k in ['clarity_pronunciation_25', 'fluency_pace_20', 'coherence_grammar_25', 'content_accuracy_20'])
+                valid_scores = any(scores.get(k, 0) > 0 for k in ['clarity_pronunciation_25', 'fluency_pace_25', 'coherence_grammar_25', 'content_accuracy_25'])
                 
                 breakdown_data = []
                 if valid_scores:
@@ -312,12 +312,15 @@ class PDFWordReportGenerator:
                     # Add each score only if it exists
                     if 'clarity_pronunciation_25' in scores:
                         breakdown_data.append(['Clarity & Pronunciation', '25', f"{scores.get('clarity_pronunciation_25', 0):.1f}", '25.0'])
-                    if 'fluency_pace_20' in scores:
-                        breakdown_data.append(['Fluency & Pace', '20', f"{scores.get('fluency_pace_20', 0):.1f}", '20.0'])
+                    if 'fluency_pace_20' in scores or 'fluency_pace_25' in scores:
+                        # Handle both old and new keys for backward compatibility
+                        val = scores.get('fluency_pace_25') or scores.get('fluency_pace_20', 0)
+                        breakdown_data.append(['Fluency & Pace', '25', f"{val:.1f}", '25.0'])
                     if 'coherence_grammar_25' in scores:
                         breakdown_data.append(['Coherence & Grammar', '25', f"{scores.get('coherence_grammar_25', 0):.1f}", '25.0'])
-                    if 'content_accuracy_20' in scores:
-                        breakdown_data.append(['Content Accuracy', '20', f"{scores.get('content_accuracy_20', 0):.1f}", '20.0'])
+                    if 'content_accuracy_20' in scores or 'content_accuracy_25' in scores:
+                        val = scores.get('content_accuracy_25') or scores.get('content_accuracy_20', 0)
+                        breakdown_data.append(['Content Accuracy', '25', f"{val:.1f}", '25.0'])
                     if 'delivery_engagement_10' in scores:
                         breakdown_data.append(['Delivery & Engagement', '10', f"{scores.get('delivery_engagement_10', 0):.1f}", '10.0'])
                     if 'final_100' in scores:

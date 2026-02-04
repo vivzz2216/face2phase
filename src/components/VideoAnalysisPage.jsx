@@ -44,9 +44,9 @@ const VideoAnalysisPage = () => {
     setFeedback(null)
     setReportData(null)
     setError(null)
-    
+
     loadData()
-    
+
     // Cleanup function to prevent state updates if component unmounts
     return () => {
       setLoading(false)
@@ -121,10 +121,15 @@ const VideoAnalysisPage = () => {
         const transcriptResponse = await fetch(`${API_BASE_URL}/api/video/${sessionId}/transcript`)
         if (transcriptResponse.ok) {
           const transcriptData = await transcriptResponse.json()
+          console.log('[TRANSCRIPT DEBUG] API Response:', transcriptData)
           transcriptSegments = transcriptData.transcript || transcriptData.segments || []
+          console.log('[TRANSCRIPT DEBUG] Extracted segments:', transcriptSegments)
+          console.log('[TRANSCRIPT DEBUG] Segments count:', transcriptSegments.length)
+        } else {
+          console.error('[TRANSCRIPT DEBUG] API returned not OK:', transcriptResponse.status)
         }
       } catch (transcriptError) {
-        console.warn('Failed to load transcript from /transcript endpoint:', transcriptError)
+        console.error('[TRANSCRIPT DEBUG] Failed to load transcript from /transcript endpoint:', transcriptError)
       }
 
       // Fallback 1: Try to get transcript from report data
@@ -147,6 +152,7 @@ const VideoAnalysisPage = () => {
         }
       }
 
+      console.log('[TRANSCRIPT DEBUG] Final transcriptSegments before setState:', transcriptSegments)
       setTranscript(transcriptSegments)
 
       if (transcriptSegments.length === 0) {
@@ -300,13 +306,13 @@ const VideoAnalysisPage = () => {
         </div>
         <h2 style={{ fontSize: '1.5rem', marginBottom: '1rem', color: '#1e293b', fontWeight: 600 }}>Error Loading Analysis</h2>
         <p style={{ fontSize: '1rem', color: '#64748b', marginBottom: '1.5rem', maxWidth: '500px', lineHeight: 1.6 }}>{error}</p>
-        <button 
+        <button
           onClick={() => {
             // Clear any session state and navigate to dashboard
             setError(null)
             setLoading(false)
             navigate('/dashboard', { replace: true })
-          }} 
+          }}
           className="back-btn"
           style={{
             padding: '12px 24px',

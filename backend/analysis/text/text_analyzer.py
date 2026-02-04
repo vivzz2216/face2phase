@@ -1179,9 +1179,18 @@ Respond ONLY with a number between 0-92 (no explanation)."""
             
             # Combine OpenAI and local scores (weighted average)
             if openai_vocab_score is not None:
-                # OpenAI is more accurate, give it 70% weight, local 30%
-                vocabulary_score = (openai_vocab_score * 0.7) + (local_vocab_score * 0.3)
-                logger.info(f"Combined vocab score - OpenAI: {openai_vocab_score}, Local: {local_vocab_score}, Final: {vocabulary_score}")
+                # IMPROVED: Blend local (70%) and OpenAI (30%) - local is more comprehensive
+                # VOCAB = 0.7 * VOC_INTERNAL + 0.3 * VOC_EXTERNAL
+                vocabulary_score = (local_vocab_score * 0.7) + (openai_vocab_score * 0.3)
+                
+                # Apply small repetition penalty (avoid double punishment)
+                type_token_ratio = vocabulary_metrics.get('type_token_ratio', 0.5)
+                if type_token_ratio < 0.4:  # Low diversity suggests repetition
+                    vocab_repetition_penalty = min(10, (0.4 - type_token_ratio) * 25)
+                    vocabulary_score -= vocab_repetition_penalty
+                    logger.info(f"Applied vocabulary repetition penalty: -{vocab_repetition_penalty:.1f} points (TTR: {type_token_ratio:.3f})")
+                
+                logger.info(f"Blended vocab score - Local: {local_vocab_score}, OpenAI: {openai_vocab_score}, Final: {vocabulary_score}")
             else:
                 # Use only local if OpenAI unavailable
                 vocabulary_score = local_vocab_score

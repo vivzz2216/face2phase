@@ -10,6 +10,10 @@ const AnalyticsTab = ({ reportData }) => {
     return <div className="analytics-empty">No analytics data available</div>
   }
 
+  // Check if this is audio-only (no video/facial analysis)
+  const isAudioOnly = reportData.is_audio_only || reportData.file_type === 'audio' || false
+  console.log('📊 AnalyticsTab - isAudioOnly:', isAudioOnly, 'file_type:', reportData.file_type)
+
   // Get word analysis data from report (preferred) or calculate from report data
   const wordAnalysis = reportData.word_analysis || {}
   const weakWordsData = wordAnalysis.weak_words || {}
@@ -168,6 +172,7 @@ const AnalyticsTab = ({ reportData }) => {
               eyeContactPercent={eyeContactPercent}
               pauseSummary={pauseSummary}
               pausesDetailed={pausesDetailed}
+              isAudioOnly={isAudioOnly}
             />
           )}
           {activeSubTab === 'advanced' && (
@@ -179,6 +184,7 @@ const AnalyticsTab = ({ reportData }) => {
               contentMetrics={reportData?.text_analysis?.content_metrics || {}}
               voiceConfidence={reportData?.voice_confidence_score ?? reportData?.voice_confidence ?? null}
               transcript={reportData?.transcript || ''}
+              isAudioOnly={isAudioOnly}
             />
           )}
         </div>
@@ -823,7 +829,14 @@ const WordChoiceAnalytics = ({
         >
           <span>Sentence Openers</span>
           <div className="metric-badge">
-            {sentenceStarterSecondary || 'No data'}
+            {(() => {
+              const sentenceOpenerAnalysis = reportData?.sentence_opener_analysis;
+              if (!sentenceOpenerAnalysis || sentenceOpenerAnalysis.status === 'no_data') {
+                return 'No data';
+              }
+              const varietyScore = sentenceOpenerAnalysis.variety_score || 100;
+              return `${varietyScore}/100`;
+            })()}
             <i className={`fas fa-chevron-${expandedSentenceOpeners ? 'down' : 'right'}`} />
           </div>
         </div>
@@ -831,69 +844,116 @@ const WordChoiceAnalytics = ({
           <div className="metric-content">
             {loadingState.sentence_openers ? (
               <MetricLoading />
-            ) : (
-              <div className="feedback-box">
-                {!hasSentenceOpenerData ? (
-                  <p>Sentence opener variety looks balanced. Keep mixing how you begin sentences to maintain flow.</p>
-                ) : (
-                  <>
-                    <p>
-                      Top opener: <strong>{sentenceStarterPrimary}</strong>
-                      {sentenceStarterSecondary && (
-                        <span> ({sentenceStarterSecondary})</span>
-                      )}
-                      . Aim for more variety if one pattern dominates.
-                    </p>
+            ) : (() => {
+              const sentenceOpenerAnalysis = reportData?.sentence_opener_analysis;
+
+              // No data case
+              if (!sentenceOpenerAnalysis || sentenceOpenerAnalysis.status === 'no_data') {
+                return (
+                  <div className="feedback-box">
+                    <p>Sentence opener variety looks balanced. Keep mixing how you begin sentences to maintain flow.</p>
+                  </div>
+                );
+              }
+
+              const {
+                status,
+                message,
+                openers_found = {},
+                recommendations = [],
+                variety_score = 100
+              } = sentenceOpenerAnalysis;
+
+              const isGood = status === 'excellent' || status === 'good';
+
+              return (
+                <div className={`feedback-box ${isGood ? 'success' : ''}`}>
+                  <p>{message}</p>
+
+                  {Object.keys(openers_found).length > 0 && (
                     <div style={{ marginTop: '0.75rem' }}>
-                      <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.45rem' }}>Opener distribution:</p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                        {sortedSentenceOpeners.slice(0, 6).map(([opener, pct]) => (
-                          <div
-                            key={opener}
-                            style={{
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '0.25rem',
-                              padding: '0.5rem 0.6rem',
-                              background: 'rgba(148, 163, 184, 0.12)',
-                              borderRadius: '6px',
-                              border: '1px solid rgba(148, 163, 184, 0.25)'
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
-                              <span style={{ fontWeight: 600 }}>{formatSentenceStarter(opener)}</span>
-                              <span style={{ color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
-                                {formatPercentDisplay(Number(pct))}
-                              </span>
-                            </div>
-                            {openerExamples[opener] && (
-                              <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                                e.g. “{openerExamples[opener]}”
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                        {sortedSentenceOpeners.length > 6 && (
-                          <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>
-                            +{sortedSentenceOpeners.length - 6} more opener patterns detected
-                          </span>
-                        )}
+                      <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>Detected openers:</p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        {Object.entries(openers_found)
+                          .sort((a, b) => b[1].count - a[1].count)
+                          .map(([opener, data]) => {
+                            const isOverused = data.is_overused;
+                            const severityColor = data.severity === 'high'
+                              ? 'rgba(244, 67, 54, 0.25)'
+                              : data.severity === 'medium'
+                                ? 'rgba(255, 152, 0, 0.2)'
+                                : 'rgba(139, 92, 246, 0.15)';
+                            const borderColor = data.severity === 'high'
+                              ? 'rgba(244, 67, 54, 0.4)'
+                              : data.severity === 'medium'
+                                ? 'rgba(255, 152, 0, 0.4)'
+                                : 'rgba(139, 92, 246, 0.3)';
+
+                            return (
+                              <div
+                                key={opener}
+                                style={{
+                                  padding: '0.5rem 0.7rem',
+                                  background: severityColor,
+                                  borderRadius: '6px',
+                                  fontSize: '0.75rem',
+                                  border: `1px solid ${borderColor}`,
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '0.25rem'
+                                }}
+                              >
+                                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                  <strong>"{opener.toUpperCase()}"</strong>
+                                  <span style={{ opacity: 0.8 }}>
+                                    {data.count}x ({data.percentage}%)
+                                  </span>
+                                </div>
+                                {isOverused && (
+                                  <span style={{ fontSize: '0.7rem', color: 'var(--accent-warning)' }}>
+                                    ⚠️ Overused
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
                       </div>
                     </div>
-                    {openerRecommendations.length > 0 && (
-                      <div style={{ marginTop: '0.75rem' }}>
-                        <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.45rem' }}>Suggestions:</p>
-                        <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-                          {openerRecommendations.slice(0, 4).map((rec, idx) => (
-                            <li key={idx}>{rec}</li>
-                          ))}
-                        </ul>
+                  )}
+
+                  {recommendations.length > 0 && (
+                    <div style={{ marginTop: '0.75rem' }}>
+                      <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>💡 Recommendations:</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {recommendations.map((rec, idx) => (
+                          <div
+                            key={idx}
+                            style={{
+                              padding: '0.5rem',
+                              background: rec.severity === 'high'
+                                ? 'rgba(244, 67, 54, 0.12)'
+                                : 'rgba(255, 152, 0, 0.12)',
+                              borderRadius: '6px',
+                              fontSize: '0.75rem',
+                              border: `1px solid ${rec.severity === 'high'
+                                ? 'rgba(244, 67, 54, 0.3)'
+                                : 'rgba(255, 152, 0, 0.3)'}`
+                            }}
+                          >
+                            <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
+                              {rec.opener}: <span style={{ opacity: 0.8 }}>{rec.usage}</span>
+                            </div>
+                            <div style={{ fontSize: '0.7rem', opacity: 0.9 }}>
+                              {rec.suggestion}
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>
@@ -1149,7 +1209,7 @@ const WordChoiceAnalytics = ({
   )
 }
 
-const DeliveryAnalytics = ({ speakingRate, pauseCount, eyeContactPercent, pauseSummary, pausesDetailed }) => {
+const DeliveryAnalytics = ({ speakingRate, pauseCount, eyeContactPercent, pauseSummary, pausesDetailed, isAudioOnly = false }) => {
   const [expandedPacing, setExpandedPacing] = useState(true)
   const [expandedEyeContact, setExpandedEyeContact] = useState(false)
   const [expandedPauses, setExpandedPauses] = useState(false)
@@ -1176,13 +1236,13 @@ const DeliveryAnalytics = ({ speakingRate, pauseCount, eyeContactPercent, pauseS
 
   const positiveMetrics = [
     pacingPositive ? 'pacing' : null,
-    eyeContactPositive ? 'eyeContact' : null,
+    (!isAudioOnly && eyeContactPositive) ? 'eyeContact' : null,
     pausePositive ? 'pauses' : null
   ].filter(Boolean)
 
   const improvementMetrics = [
     hasSpeakingRate && !pacingPositive ? 'pacing' : null,
-    hasEyeContact && !eyeContactPositive ? 'eyeContact' : null,
+    (!isAudioOnly && hasEyeContact && !eyeContactPositive) ? 'eyeContact' : null,
     (!pausePositive && typeof totalPauses === 'number') ? 'pauses' : null
   ].filter(Boolean)
 
@@ -1391,7 +1451,7 @@ const DeliveryAnalytics = ({ speakingRate, pauseCount, eyeContactPercent, pauseS
             <i className="fas fa-trophy" /> What went well
           </h3>
           {pacingPositive && renderPacingCard()}
-          {eyeContactPositive && renderEyeContactCard()}
+          {!isAudioOnly && eyeContactPositive && renderEyeContactCard()}
           {pausePositive && renderPauseCard()}
         </>
       )}
@@ -1402,7 +1462,7 @@ const DeliveryAnalytics = ({ speakingRate, pauseCount, eyeContactPercent, pauseS
             <i className="fas fa-lightbulb" /> What could have gone better
           </h3>
           {!pacingPositive && hasSpeakingRate && renderPacingCard()}
-          {!eyeContactPositive && hasEyeContact && renderEyeContactCard()}
+          {!isAudioOnly && !eyeContactPositive && hasEyeContact && renderEyeContactCard()}
           {!pausePositive && typeof totalPauses === 'number' && renderPauseCard()}
         </>
       )}
@@ -1429,7 +1489,8 @@ const AdvancedAnalytics = ({
   structureMetrics = {},
   contentMetrics = {},
   voiceConfidence = null,
-  transcript = ''
+  transcript = '',
+  isAudioOnly = false
 }) => {
   const numberOrNull = (value) => {
     if (value === null || value === undefined) return null
@@ -1520,6 +1581,36 @@ const AdvancedAnalytics = ({
 
   const trendBuckets = Array.isArray(fillerTrend.trend) ? fillerTrend.trend : []
   const topFillers = Array.isArray(fillerTrend.top_labels) ? fillerTrend.top_labels : []
+
+  // Fallback: Count fillers directly from transcript if trend data is missing
+  const fallbackFillerCount = useMemo(() => {
+    if (trendBuckets.length > 0 || !transcript || typeof transcript !== 'string') {
+      return null
+    }
+
+    const fillerWords = ['uh', 'um', 'ah', 'er', 'hmm', 'erm', 'eh', 'umm', 'uhh', 'ahh', 'ehh', 'err', 'uhm', 'ahm', 'ummm', 'uhhh', 'ahhh', 'ehhh', 'errr', 'oh']
+    const words = transcript.toLowerCase().split(/\s+/)
+    const fillerCounts = {}
+    let totalFillers = 0
+
+    words.forEach(word => {
+      const cleanWord = word.replace(/[.,!?;:]/g, '')
+      if (fillerWords.includes(cleanWord)) {
+        fillerCounts[cleanWord] = (fillerCounts[cleanWord] || 0) + 1
+        totalFillers++
+      }
+    })
+
+    const topFillersList = Object.entries(fillerCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+
+    return {
+      total: totalFillers,
+      breakdown: topFillersList
+    }
+  }, [transcript, trendBuckets.length])
+
   const pauseCounts = pauseCadence.counts || {}
   const pauseDurations = pauseCadence.durations || {}
   let confidenceScore = numberOrNull(openingConfidence.opening_confidence)
@@ -1690,8 +1781,46 @@ const AdvancedAnalytics = ({
         <div className="advanced-grid">
           <div className="advanced-card">
             <div className="card-title">Filler Trend</div>
-            {trendBuckets.length === 0 ? (
-              <p className="muted">No filler clusters detected.</p>
+            {trendBuckets.length === 0 && !fallbackFillerCount ? (
+              <p className="muted">No filler data available.</p>
+            ) : trendBuckets.length === 0 && fallbackFillerCount ? (
+              <div>
+                <div style={{ padding: '0.75rem', background: 'rgba(244, 67, 54, 0.1)', borderRadius: '6px', marginBottom: '0.75rem' }}>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--accent-warning)', marginBottom: '0.5rem' }}>
+                    {fallbackFillerCount.total} Fillers Detected
+                  </div>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
+                    Filler words significantly impact your delivery. Try to pause instead of using "uh" or "um".
+                  </p>
+                </div>
+                {fallbackFillerCount.breakdown.length > 0 && (
+                  <div className="trend-summary">
+                    <span className="muted" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Breakdown:</span>
+                    <div className="chip-row" style={{ marginTop: '0.5rem' }}>
+                      {fallbackFillerCount.breakdown.map(([label, count]) => (
+                        <span key={label} className="trend-chip emphasis" style={{
+                          padding: '0.4rem 0.6rem',
+                          background: 'rgba(244, 67, 54, 0.15)',
+                          border: '1px solid rgba(244, 67, 54, 0.3)',
+                          borderRadius: '4px',
+                          fontSize: '0.75rem',
+                          fontWeight: 600
+                        }}>
+                          "{label}" × {count}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div style={{ marginTop: '0.75rem', padding: '0.5rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-primary)' }}>
+                    <strong>💡 Quick Fix:</strong>
+                    <div style={{ marginTop: '0.25rem', color: 'var(--text-secondary)' }}>
+                      Practice pausing for 1-2 seconds instead of saying filler words. Record yourself and count improvements.
+                    </div>
+                  </div>
+                </div>
+              </div>
             ) : (
               <>
                 <ul className="trend-list">
@@ -1771,44 +1900,47 @@ const AdvancedAnalytics = ({
         </div>
       </div>
 
-      <div className="advanced-section">
-        <h3 className="section-title"><i className="fas fa-user-circle" /> Visual Presence</h3>
-        <div className="advanced-grid">
-          <div className="advanced-card">
-            <div className="card-title">Tension Ratio</div>
-            {typeof tensionSummary.tension_percentage === 'number' ? (
-              <div className="gauge-card">
-                <div className="gauge-bar">
-                  <div
-                    className="gauge-fill danger"
-                    style={{ width: `${Math.min(100, Math.max(0, tensionSummary.tension_percentage))}%` }}
-                  />
+      {/* Only show Visual Presence for video files */}
+      {!isAudioOnly && (
+        <div className="advanced-section">
+          <h3 className="section-title"><i className="fas fa-user-circle" /> Visual Presence</h3>
+          <div className="advanced-grid">
+            <div className="advanced-card">
+              <div className="card-title">Tension Ratio</div>
+              {typeof tensionSummary.tension_percentage === 'number' ? (
+                <div className="gauge-card">
+                  <div className="gauge-bar">
+                    <div
+                      className="gauge-fill danger"
+                      style={{ width: `${Math.min(100, Math.max(0, tensionSummary.tension_percentage))}%` }}
+                    />
+                  </div>
+                  <div className="gauge-value">{tensionSummary.tension_percentage.toFixed(1)}%</div>
+                  <div className="muted">
+                    Eye-contact stability:{' '}
+                    {typeof tensionSummary.eye_contact_stability === 'number'
+                      ? `${tensionSummary.eye_contact_stability.toFixed(0)}%`
+                      : '--'}
+                  </div>
+                  <div className="muted">
+                    Avg eye contact:{' '}
+                    {typeof tensionSummary.avg_eye_contact_pct === 'number'
+                      ? `${tensionSummary.avg_eye_contact_pct.toFixed(0)}%`
+                      : '--'}
+                  </div>
                 </div>
-                <div className="gauge-value">{tensionSummary.tension_percentage.toFixed(1)}%</div>
-                <div className="muted">
-                  Eye-contact stability:{' '}
-                  {typeof tensionSummary.eye_contact_stability === 'number'
-                    ? `${tensionSummary.eye_contact_stability.toFixed(0)}%`
-                    : '--'}
-                </div>
-                <div className="muted">
-                  Avg eye contact:{' '}
-                  {typeof tensionSummary.avg_eye_contact_pct === 'number'
-                    ? `${tensionSummary.avg_eye_contact_pct.toFixed(0)}%`
-                    : '--'}
-                </div>
-              </div>
-            ) : (
-              <p className="muted">Tension analytics not available.</p>
-            )}
-          </div>
+              ) : (
+                <p className="muted">Tension analytics not available.</p>
+              )}
+            </div>
 
-          <div className="advanced-card">
-            <div className="card-title">Emotion Timeline (smoothed)</div>
-            {renderTimelineSnippet()}
+            <div className="advanced-card">
+              <div className="card-title">Emotion Timeline (smoothed)</div>
+              {renderTimelineSnippet()}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="advanced-section">
         <h3 className="section-title"><i className="fas fa-font" /> Narrative Cohesion</h3>
@@ -1833,20 +1965,79 @@ const AdvancedAnalytics = ({
                     ))}
                   </div>
                 )}
-                {keywordDetails.length > 0 && (
-                  <ul className="trend-list compact" style={{ marginTop: '0.45rem' }}>
-                    {keywordDetails.slice(0, 4).map((detail, idx) => (
-                      <li key={`${detail.word}-${idx}`}>
-                        <strong>{detail.word}</strong> · {detail.count} mention{detail.count === 1 ? '' : 's'}
-                        {detail.example && ` — “${detail.example}”`}
-                      </li>
-                    ))}
-                  </ul>
-                )}
                 {keywordDetails.length === 0 && (
                   <p className="muted" style={{ marginTop: '0.45rem' }}>
                     Limited topical phrases detected—add concrete details to boost coherence.
                   </p>
+                )}
+                {keywordDetails.length > 0 && (
+                  <div style={{ marginTop: '0.75rem' }}>
+                    <button
+                      onClick={() => {
+                        const section = document.getElementById('topic-coherence-examples')
+                        if (section) {
+                          section.style.display = section.style.display === 'none' ? 'block' : 'none'
+                        }
+                      }}
+                      style={{
+                        padding: '0.4rem 0.75rem',
+                        fontSize: '0.75rem',
+                        background: 'var(--accent-primary)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.target.style.opacity = '0.85'}
+                      onMouseLeave={(e) => e.target.style.opacity = '1'}
+                    >
+                      <i className="fas fa-eye" style={{ marginRight: '0.4rem' }} />
+                      Show Examples
+                    </button>
+                    <div id="topic-coherence-examples" style={{ display: 'none', marginTop: '0.75rem' }}>
+                      <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
+                        Detected Keywords & Phrases:
+                      </p>
+                      <ul className="trend-list compact">
+                        {keywordDetails.slice(0, 8).map((detail, idx) => (
+                          <li key={`${detail.word}-${idx}`} style={{ marginBottom: '0.5rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
+                              <div style={{ flex: 1 }}>
+                                <strong style={{ color: 'var(--accent-primary)' }}>{detail.word}</strong>
+                                <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', opacity: 0.7 }}>
+                                  · {detail.count} mention{detail.count === 1 ? '' : 's'}
+                                </span>
+                                {detail.example && (
+                                  <div style={{ marginTop: '0.25rem', fontSize: '0.7rem', fontStyle: 'italic', color: 'var(--text-secondary)' }}>
+                                    "{detail.example}"
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                      <button
+                        onClick={() => {
+                          document.getElementById('topic-coherence-examples').style.display = 'none'
+                        }}
+                        style={{
+                          marginTop: '0.5rem',
+                          padding: '0.3rem 0.6rem',
+                          fontSize: '0.7rem',
+                          background: 'transparent',
+                          color: 'var(--text-secondary)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '4px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Hide Examples
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
             ) : (
@@ -1906,35 +2097,116 @@ const AdvancedAnalytics = ({
                 </div>
                 <div className="gauge-value">{sentencePatternScore.toFixed(1)} / 100</div>
                 {sentencePatternBreakdown && (
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.4rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.35rem' }}>
-                    {"average_length" in sentencePatternBreakdown && (
-                      <div>Avg length: {sentencePatternBreakdown.average_length}</div>
-                    )}
-                    {"length_std" in sentencePatternBreakdown && (
-                      <div>Std dev: {sentencePatternBreakdown.length_std}</div>
-                    )}
-                    {"short_pct" in sentencePatternBreakdown && (
-                      <div>Short (&lt;=8 words): {sentencePatternBreakdown.short_pct}%</div>
-                    )}
-                    {"long_pct" in sentencePatternBreakdown && (
-                      <div>Long (&ge;25 words): {sentencePatternBreakdown.long_pct}%</div>
-                    )}
+                  <div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+                      <div style={{ marginBottom: '0.25rem' }}>
+                        <strong>Avg length:</strong> {sentencePatternBreakdown.average_length || '—'} words
+                      </div>
+                      <div style={{ marginBottom: '0.25rem' }}>
+                        <strong>Std dev:</strong> {sentencePatternBreakdown.length_std || '—'}
+                      </div>
+                      <div style={{ marginBottom: '0.25rem' }}>
+                        <strong>Short (≤8 words):</strong> {sentencePatternBreakdown.short_pct || 0}%
+                      </div>
+                      <div>
+                        <strong>Long (≥25 words):</strong> {sentencePatternBreakdown.long_pct || 0}%
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const section = document.getElementById('sentence-pattern-examples')
+                        if (section) {
+                          section.style.display = section.style.display === 'none' ? 'block' : 'none'
+                        }
+                      }}
+                      style={{
+                        marginTop: '0.75rem',
+                        padding: '0.4rem 0.75rem',
+                        fontSize: '0.75rem',
+                        background: 'var(--accent-primary)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.target.style.opacity = '0.85'}
+                      onMouseLeave={(e) => e.target.style.opacity = '1'}
+                    >
+                      <i className="fas fa-eye" style={{ marginRight: '0.4rem' }} />
+                      Show Examples
+                    </button>
+                    <div id="sentence-pattern-examples" style={{ display: 'none', marginTop: '0.75rem' }}>
+                      <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
+                        What Contributed to This Score:
+                      </p>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
+                        <div style={{ padding: '0.5rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '6px', marginBottom: '0.5rem' }}>
+                          <strong style={{ color: 'var(--text-primary)' }}>Sentence Length Variety:</strong>
+                          <div style={{ marginTop: '0.25rem' }}>
+                            Your sentences averaged <strong>{sentencePatternBreakdown.average_length}</strong> words with a standard deviation of <strong>{sentencePatternBreakdown.length_std}</strong>.
+                          </div>
+                          <div style={{ marginTop: '0.25rem' }}>
+                            • <strong>{sentencePatternBreakdown.short_pct}%</strong> were short (≤8 words)
+                          </div>
+                          <div>
+                            • <strong>{sentencePatternBreakdown.long_pct}%</strong> were long (≥25 words)
+                          </div>
+                        </div>
+                        <div style={{ padding: '0.5rem', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '6px' }}>
+                          <strong style={{ color: 'var(--text-primary)' }}>💡 Tip:</strong>
+                          <div style={{ marginTop: '0.25rem' }}>
+                            Aim for 10-20 words per sentence on average with good variety. Too many short sentences feel choppy; too many long ones lose clarity.
+                          </div>
+                        </div>
+                      </div>
+                      {repetitionAlerts.length > 0 && (
+                        <div style={{ marginTop: '0.75rem' }}>
+                          <p style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.4rem', color: 'var(--text-primary)' }}>
+                            Repetition Patterns Detected:
+                          </p>
+                          <ul className="trend-list compact">
+                            {repetitionAlerts.slice(0, 5).map((alert, idx) => {
+                              if (typeof alert === 'string') {
+                                return <li key={idx}>{alert}</li>
+                              }
+                              return (
+                                <li key={idx} style={{ marginBottom: '0.4rem' }}>
+                                  <strong style={{ color: 'var(--accent-warning)' }}>
+                                    {alert.pattern ? `"${alert.pattern}"` : 'Pattern'}
+                                  </strong>
+                                  {alert.count && ` repeated ${alert.count} times`}
+                                  {alert.example && (
+                                    <div style={{ marginTop: '0.2rem', fontStyle: 'italic', fontSize: '0.7rem' }}>
+                                      Example: "{alert.example}"
+                                    </div>
+                                  )}
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        </div>
+                      )}
+                      <button
+                        onClick={() => {
+                          document.getElementById('sentence-pattern-examples').style.display = 'none'
+                        }}
+                        style={{
+                          marginTop: '0.75rem',
+                          padding: '0.3rem 0.6rem',
+                          fontSize: '0.7rem',
+                          background: 'transparent',
+                          color: 'var(--text-secondary)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '4px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Hide Examples
+                      </button>
+                    </div>
                   </div>
-                )}
-                {repetitionAlerts.length > 0 && (
-                  <ul className="trend-list compact">
-                    {repetitionAlerts.slice(0, 3).map((alert, idx) => {
-                      if (typeof alert === 'string') {
-                        return <li key={idx}>{alert}</li>
-                      }
-                      return (
-                        <li key={idx}>
-                          {alert.pattern ? `${alert.pattern}: ${alert.count}` : alert.count}
-                          {alert.example ? ` – "${alert.example}"` : ''}
-                        </li>
-                      )
-                    })}
-                  </ul>
                 )}
               </div>
             ) : (

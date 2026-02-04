@@ -38,16 +38,26 @@ class ReportGenerator:
             Overall communication score (0-100)
         """
         try:
+            # IMPROVED: Apply facial mitigation to voice score
+            # High facial confidence can partially offset voice issues
+            # Formula: facial_mitigation = clamp(((facial - 70) / 30) * 5, 0, 5)
+            adjusted_voice_score = voice_score
+            if facial_score >= 70:
+                facial_mitigation = ((facial_score - 70) / 30) * 5
+                facial_mitigation = max(0, min(5, facial_mitigation))
+                adjusted_voice_score = min(100, voice_score + facial_mitigation)
+                logger.info(f"Facial mitigation applied: +{facial_mitigation:.2f} points to voice (facial: {facial_score}/100)")
+            
             if is_audio_only or facial_score == 0:
                 # For audio-only: redistribute weights (50% voice, 50% vocabulary)
                 overall_score = (
-                    voice_score * 0.5 +
+                    adjusted_voice_score * 0.5 +
                     vocabulary_score * 0.5
                 )
             else:
-                # For video: use standard weights
+                # For video: use standard weights with adjusted voice score
                 overall_score = (
-                    voice_score * VOICE_CONFIDENCE_WEIGHT +
+                    adjusted_voice_score * VOICE_CONFIDENCE_WEIGHT +
                     facial_score * FACIAL_CONFIDENCE_WEIGHT +
                     vocabulary_score * VOCABULARY_WEIGHT
                 )
@@ -223,8 +233,10 @@ class ReportGenerator:
             elif total_pauses > 15 and avg_pause > 2.0:
                 improvements.append(f"Optimize pause usage ({total_pauses} pauses, avg {avg_pause:.1f}s) - aim for shorter, strategic pauses")
             
-            # Facial improvements - specific metrics
-            if facial_results.get('analysis_successful', False):
+            # Facial improvements - specific metrics (SKIP IF AUDIO ONLY)
+            is_audio_only = audio_results.get('is_audio_only', False) or facial_results.get('facial_confidence_score', 0) == 0
+            
+            if not is_audio_only and facial_results.get('analysis_successful', False):
                 facial_score = facial_results.get('facial_confidence_score', 0)
                 avg_eye_contact = facial_results.get('avg_eye_contact', 0)
                 face_detection_rate = facial_results.get('face_detection_rate', 0)
@@ -497,6 +509,9 @@ class ReportGenerator:
                 "filler_analysis": audio_results.get('filler_analysis', {}),
                 "speaking_metrics": audio_results.get('speaking_metrics', {}),
                 
+                # NEW: Sentence opener analysis for variety detection
+                "sentence_opener_analysis": audio_results.get('sentence_opener_analysis', {}),
+                
                 # NEW: Precise stammering/mumbling tracking with timestamps
                 "mumbling_instances": audio_results.get('filler_analysis', {}).get('mumbling_instances', []),
                 "stammering_instances": audio_results.get('filler_analysis', {}).get('stammering_instances', []),
@@ -547,15 +562,29 @@ class ReportGenerator:
             
             # Save report to file
             report_path = self.reports_dir / f"{session_id}.json"
-            clean_report = self._sanitize_for_json(report)
-            with open(report_path, 'w', encoding='utf-8') as f:
-                json.dump(clean_report, f, indent=2, ensure_ascii=False)
+            try:
+                clean_report = self._sanitize_for_json(report)
+            except Exception as sanitize_error:
+                logger.error(f"Failed to sanitize report for JSON serialization: {sanitize_error}", exc_info=True)
+                # Try to save a minimal version
+                clean_report = {
+                    "session_id": session_id,
+                    "timestamp": datetime.now().isoformat(),
+                    "error": f"Report sanitization failed: {str(sanitize_error)}",
+                    "analysis_successful": False
+                }
             
-            logger.info(f"Report saved to: {report_path}")
+            try:
+                with open(report_path, 'w', encoding='utf-8') as f:
+                    json.dump(clean_report, f, indent=2, ensure_ascii=False)
+                logger.info(f"Report saved to: {report_path}")
+            except Exception as save_error:
+                logger.error(f"Failed to save report to {report_path}: {save_error}", exc_info=True)
+                # Still return the report even if save fails, but log the error
             return clean_report
             
         except Exception as e:
-            logger.error(f"Error generating report: {e}")
+            logger.error(f"Error generating report: {e}", exc_info=True)
             fallback = {
                 "session_id": session_id,
                 "timestamp": datetime.now().isoformat(),
@@ -563,7 +592,16 @@ class ReportGenerator:
                 "error": str(e),
                 "analysis_successful": False
             }
-            return self._sanitize_for_json(fallback)
+            clean_fallback = self._sanitize_for_json(fallback)
+            # CRITICAL FIX: Always save fallback report so it can be retrieved
+            try:
+                report_path = self.reports_dir / f"{session_id}.json"
+                with open(report_path, 'w', encoding='utf-8') as f:
+                    json.dump(clean_fallback, f, indent=2, ensure_ascii=False)
+                logger.info(f"Fallback report saved to: {report_path}")
+            except Exception as save_error:
+                logger.error(f"Failed to save fallback report to {report_path}: {save_error}", exc_info=True)
+            return clean_fallback
     
     def build_session_summary(
         self,

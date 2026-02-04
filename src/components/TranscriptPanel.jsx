@@ -4,7 +4,10 @@ import './TranscriptPanel.css'
 const TranscriptPanel = ({ transcript, currentTime, onSeek, acousticFillers = [] }) => {
   const [searchQuery, setSearchQuery] = useState('')
   const [filteredTranscript, setFilteredTranscript] = useState(transcript || [])
+  const [userHasScrolled, setUserHasScrolled] = useState(false)
   const activeSegmentRef = useRef(null)
+  const transcriptContentRef = useRef(null)
+  const lastScrollTime = useRef(0)
 
   const getSegmentKey = (segment) => {
     if (!segment) return ''
@@ -74,17 +77,63 @@ const TranscriptPanel = ({ transcript, currentTime, onSeek, acousticFillers = []
     }
   }, [transcript, searchQuery])
 
+  // Handle user scroll detection - AGGRESSIVE MODE
   useEffect(() => {
-    if (activeSegmentRef.current) {
+    const contentEl = transcriptContentRef.current
+    if (!contentEl) return
+
+    let scrollTimeout = null
+
+    const handleScroll = (e) => {
+      // Clear any pending timeout
+      if (scrollTimeout) {
+        clearTimeout(scrollTimeout)
+      }
+
+      // Mark as user-initiated scroll IMMEDIATELY
+      const now = Date.now()
+      if (now - lastScrollTime.current > 50) {
+        setUserHasScrolled(true)
+      }
+    }
+
+    const handleWheel = () => {
+      // User is actively scrolling with mouse wheel
+      setUserHasScrolled(true)
+    }
+
+    const handleTouchMove = () => {
+      // User is actively scrolling with touch
+      setUserHasScrolled(true)
+    }
+
+    contentEl.addEventListener('scroll', handleScroll, { passive: true })
+    contentEl.addEventListener('wheel', handleWheel, { passive: true })
+    contentEl.addEventListener('touchmove', handleTouchMove, { passive: true })
+
+    return () => {
+      contentEl.removeEventListener('scroll', handleScroll)
+      contentEl.removeEventListener('wheel', handleWheel)
+      contentEl.removeEventListener('touchmove', handleTouchMove)
+      if (scrollTimeout) clearTimeout(scrollTimeout)
+    }
+  }, [])
+
+  // Auto-scroll ONLY if user hasn't scrolled at all
+  useEffect(() => {
+    if (activeSegmentRef.current && !userHasScrolled) {
+      lastScrollTime.current = Date.now()
       activeSegmentRef.current.scrollIntoView({
         behavior: 'smooth',
         block: 'center'
       })
     }
-  }, [currentTime])
+  }, [currentTime, userHasScrolled])
 
   const handleSegmentClick = (segment) => {
     if (onSeek && typeof segment.start === 'number') {
+      // Reset user scroll flag when they click a segment
+      setUserHasScrolled(false)
       onSeek(segment.start)
     }
   }
@@ -122,7 +171,39 @@ const TranscriptPanel = ({ transcript, currentTime, onSeek, acousticFillers = []
         </div>
       </div>
 
-      <div className="transcript-content">
+      {userHasScrolled && (
+        <div style={{
+          padding: '0.5rem 1rem',
+          background: 'rgba(59, 130, 246, 0.1)',
+          borderBottom: '1px solid rgba(59, 130, 246, 0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontSize: '0.75rem',
+          color: 'var(--text-secondary)'
+        }}>
+          <span>
+            <i className="fas fa-info-circle" style={{ marginRight: '0.5rem' }} />
+            Auto-scroll disabled - you're browsing freely
+          </span>
+          <button
+            onClick={() => setUserHasScrolled(false)}
+            style={{
+              padding: '0.25rem 0.5rem',
+              fontSize: '0.7rem',
+              background: 'var(--accent-primary)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            Re-enable auto-scroll
+          </button>
+        </div>
+      )}
+
+      <div className="transcript-content" ref={transcriptContentRef}>
         {filteredTranscript.length === 0 ? (
           <div className="transcript-empty">
             {searchQuery ? 'No results found' : 'No transcript available'}

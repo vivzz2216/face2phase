@@ -163,14 +163,16 @@ async def process_file_async(session_id: str, file_path: Path, file_type: str):
         thumbnail_url = None
         if file_type == "video":
             logger.info("Processing video file - extracting audio")
-            processing_status[session_id]["progress"] = 10
+            if session_id in processing_status:
+                processing_status[session_id]["progress"] = 10
             audio_path = extract_audio_from_video(file_path)
             if not audio_path:
                 raise Exception("Failed to extract audio from video")
             logger.info(f"Audio extracted to: {audio_path}")
         
         # Run analyses (audio + visual) concurrently where possible
-        processing_status[session_id]["progress"] = 20
+        if session_id in processing_status:
+            processing_status[session_id]["progress"] = 20
         logger.info("Starting analysis pipeline (audio + visual parallel)")
 
         audio_task = asyncio.to_thread(enhanced_audio_analyzer.analyze_audio_comprehensive, audio_path)
@@ -192,6 +194,13 @@ async def process_file_async(session_id: str, file_path: Path, file_type: str):
             logger.info("Audio analysis completed")
             logger.info(f"Transcript length: {len(transcript) if isinstance(transcript, str) else 'N/A'}")
             logger.info(f"Enhanced transcript length: {len(enhanced_transcript)}")
+            
+            # DEBUG: Log transcript preview
+            if transcript:
+                logger.info(f"📝 Transcript preview (first 100 chars): {transcript[:100]}")
+            else:
+                logger.warning("⚠️ TRANSCRIPT IS EMPTY! This will cause issues in the UI.")
+                logger.warning(f"Audio results keys: {list(audio_results.keys())}")
 
             pause_summary = audio_results.get('pause_summary', {})
             logger.info(f"Pauses detected: {pause_summary.get('total_pauses', 0)}")
@@ -201,7 +210,10 @@ async def process_file_async(session_id: str, file_path: Path, file_type: str):
             logger.error(f"Enhanced audio analysis failed: {e}")
             audio_results = {"analysis_successful": False, "error": str(e)}
         
-        processing_status[session_id]["progress"] = 50
+        if session_id in processing_status:
+            processing_status[session_id]["progress"] = 50
+        else:
+            logger.warning(f"Session {session_id} missing during progress update (50%)")
         
         facial_results = {"analysis_successful": True, "facial_confidence_score": 0}
         if facial_task:
@@ -213,7 +225,8 @@ async def process_file_async(session_id: str, file_path: Path, file_type: str):
                 logger.error(f"Facial analysis failed: {e}")
                 facial_results = {"analysis_successful": False, "error": str(e)}
         
-        processing_status[session_id]["progress"] = 70
+        if session_id in processing_status:
+            processing_status[session_id]["progress"] = 70
         
         # Word analysis for weak words, fillers, and vocabulary (run in parallel)
         word_analysis_results = {}
@@ -275,7 +288,12 @@ async def process_file_async(session_id: str, file_path: Path, file_type: str):
             strict_evaluator = StrictAudioEvaluator()
             
             # Run strict evaluation
-            strict_eval_result = strict_evaluator.evaluate(words_with_timing, duration_sec)
+            strict_eval_result = strict_evaluator.evaluate(
+                words_with_timing, 
+                duration_sec, 
+                filler_stats=audio_results.get('filler_analysis', {}),
+                pause_stats=audio_results.get('pause_summary', {})
+            )
             
             logger.info("STRICT EVALUATION RESULTS:")
             logger.info(f"Final score: {strict_eval_result['scores']['final_100']}")
@@ -291,7 +309,7 @@ async def process_file_async(session_id: str, file_path: Path, file_type: str):
                 },
                 'structure_metrics': {},
                 'content_metrics': {},
-                'vocabulary_score': strict_eval_result['scores']['coherence_grammar_25'] + strict_eval_result['scores']['content_accuracy_20'],
+                'vocabulary_score': ((strict_eval_result['scores']['coherence_grammar_25'] + strict_eval_result['scores']['content_accuracy_20']) / 45.0) * 100,
                 'summary': f"Strict audio-only evaluation. Score: {strict_eval_result['scores']['final_100']}/100",
                 'analysis_successful': True,
                 'strict_evaluation': strict_eval_result
@@ -301,9 +319,9 @@ async def process_file_async(session_id: str, file_path: Path, file_type: str):
             if 'voice_confidence_score' in audio_results:
                 # Use strict clarity + fluency scores for voice
                 audio_results['voice_confidence_score'] = (
-                    strict_eval_result['scores']['clarity_pronunciation_25'] + 
-                    strict_eval_result['scores']['fluency_pace_20']
-                )
+                    (strict_eval_result['scores']['clarity_pronunciation_25'] + 
+                     strict_eval_result['scores']['fluency_pace_20']) / 45.0
+                ) * 100
             
             logger.info("Strict evaluation completed")
             
@@ -326,7 +344,8 @@ async def process_file_async(session_id: str, file_path: Path, file_type: str):
             else:
                 text_results = text_analyzer.analyze_text(transcript)
         
-        processing_status[session_id]["progress"] = 90
+        if session_id in processing_status:
+            processing_status[session_id]["progress"] = 90
         
         # Generate report
         logger.info("Generating final report")
@@ -342,7 +361,8 @@ async def process_file_async(session_id: str, file_path: Path, file_type: str):
                     generated = generate_video_thumbnail(file_path, thumbnail_target)
                     if generated and generated.exists():
                         thumbnail_url = f"/thumbnails/{generated.name}"
-                        processing_status[session_id]["thumbnail_url"] = thumbnail_url
+                        if session_id in processing_status:
+                            processing_status[session_id]["thumbnail_url"] = thumbnail_url
                         report["thumbnail_url"] = thumbnail_url
                         logger.info("Thumbnail generated for session %s at %s", session_id, generated)
                     else:
@@ -374,20 +394,22 @@ async def process_file_async(session_id: str, file_path: Path, file_type: str):
                 "analysis_successful": False
             }
         
-        processing_status[session_id]["progress"] = 100
-        processing_status[session_id]["status"] = "completed"
-        processing_status[session_id]["report"] = report
+        if session_id in processing_status:
+            processing_status[session_id]["progress"] = 100
+            processing_status[session_id]["status"] = "completed"
+            processing_status[session_id]["report"] = report
         
         # Save analysis to database ONLY if user_id is available (logged-in users only)
         # Guests will NOT have their analyses saved
-        user_id = processing_status[session_id].get("user_id")
+        server_status_entry = processing_status.get(session_id, {})
+        user_id = server_status_entry.get("user_id")
         logger.info(f"Processing completed for session_id={session_id}, user_id={user_id}")
         if user_id:
             try:
                 analysis_data = {
-                    "file_name": processing_status[session_id].get("filename", ""),
+                    "file_name": server_status_entry.get("filename", ""),
                     "file_type": file_type,
-                    "file_size": processing_status[session_id].get("file_size", 0),
+                    "file_size": server_status_entry.get("file_size", 0),
                     "audio_analysis": audio_results,
                     "facial_analysis": facial_results,
                     "text_analysis": text_results,
@@ -400,7 +422,7 @@ async def process_file_async(session_id: str, file_path: Path, file_type: str):
                 try:
                     summary_metadata = {
                         "user_id": user_id,
-                        "file_name": processing_status[session_id].get("filename", ""),
+                        "file_name": server_status_entry.get("filename", ""),
                         "file_type": file_type,
                         "pdf_path": None
                     }
@@ -722,15 +744,25 @@ async def list_analyses():
 async def get_report_json(session_id: str):
     """Get report data as JSON (for API/React)"""
     try:
+        # Try to load from disk first
         report = report_generator.load_report(session_id)
+        
+        # Fallback: Check processing_status if file not found (handles race conditions)
+        if not report and session_id in processing_status:
+            status_data = processing_status.get(session_id, {})
+            if "report" in status_data:
+                report = status_data["report"]
+                logger.info(f"Report retrieved from processing_status for session: {session_id}")
+        
         if not report:
+            logger.warning(f"Report not found for session: {session_id} (checked disk and memory)")
             raise HTTPException(status_code=404, detail="Report not found")
         
         return JSONResponse(content=report)
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting report JSON: {e}")
+        logger.error(f"Error getting report JSON: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting report: {str(e)}")
 
 # Removed legacy /download endpoint in favor of /api/video/... export endpoints and /api/report for JSON.
@@ -897,8 +929,15 @@ async def get_timestamped_transcript(session_id: str):
         if not report:
             raise HTTPException(status_code=404, detail="Report not found")
         
+        # DEBUG: Log what's in the report
+        logger.info(f"[TRANSCRIPT DEBUG] Report keys: {list(report.keys())}")
+        logger.info(f"[TRANSCRIPT DEBUG] Has transcript: {bool(report.get('transcript'))}")
+        logger.info(f"[TRANSCRIPT DEBUG] Has words_with_timing: {bool(report.get('words_with_timing'))}")
+        logger.info(f"[TRANSCRIPT DEBUG] words_with_timing length: {len(report.get('words_with_timing', []))}")
+        
         # Get transcript from report
         transcript = report.get('transcript', '')
+        logger.info(f"[TRANSCRIPT DEBUG] Transcript length: {len(transcript)}")
         
         # VERBATIM MODE: Try to get audio results with words_with_timing
         audio_results = {}
@@ -906,6 +945,7 @@ async def get_timestamped_transcript(session_id: str):
         # First, try to get from processing status (if still in memory)
         if session_id in processing_status and 'audio_results' in processing_status[session_id]:
             audio_results = processing_status[session_id].get('audio_results', {})
+            logger.info(f"[TRANSCRIPT DEBUG] Found audio_results in processing_status")
         
         # Second, check if words_with_timing is stored in the report (persisted)
         if not audio_results.get('words_with_timing') and report.get('words_with_timing'):
@@ -915,6 +955,7 @@ async def get_timestamped_transcript(session_id: str):
                 'speaking_metrics': report.get('speaking_metrics', {}),
                 'transcript': transcript
             }
+            logger.info(f"[TRANSCRIPT DEBUG] Reconstructed audio_results from report. words_with_timing count: {len(audio_results.get('words_with_timing', []))}")
         
         # Fallback: reconstruct from report without word timing
         if not audio_results:
@@ -924,9 +965,12 @@ async def get_timestamped_transcript(session_id: str):
                     'total_duration': report.get('speaking_rate_wpm', 0) * 60 / 150 if report.get('speaking_rate_wpm') else 0
                 }
             }
+            logger.warning(f"[TRANSCRIPT DEBUG] Using fallback audio_results without word timing")
         
         # Generate timestamped transcript
+        logger.info(f"[TRANSCRIPT DEBUG] Calling transcript_processor with audio_results keys: {list(audio_results.keys())}")
         timestamped = transcript_processor.get_timestamped_transcript(audio_results, transcript)
+        logger.info(f"[TRANSCRIPT DEBUG] Generated timestamped segments: {len(timestamped)}")
         
         return JSONResponse(content={"transcript": timestamped, "full_text": transcript})
         
