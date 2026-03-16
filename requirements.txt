@@ -1,0 +1,92 @@
+# Python: 3.10.11+ (64-bit)
+# Tested on Python 3.10.11
+#
+# Installation: pip install -r requirements.txt
+# All dependencies are pinned to tested, compatible versions
+# Total install time: ~5-10 minutes depending on internet speed
+
+# Web Framework
+fastapi==0.110.0
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9
+pydantic==2.6.4
+
+# Core Numerical Stack
+# Note: numpy<2 required for matplotlib compatibility
+# numba 0.60+ required for librosa 0.10+
+numpy>=1.20,<2
+scipy==1.11.4
+numba>=0.60.0
+
+# Audio Processing
+# librosa 0.10+ requires numba>=0.57
+librosa>=0.10.0
+soundfile==0.12.1
+openai-whisper  # Required for audio transcription
+
+# Deep Learning
+# torch==2.2.2
+# torchaudio==2.2.2
+
+# Computer Vision (deepface dependencies)
+# opencv-python <4.9 required for numpy<2 compatibility
+opencv-python>=4.8.0,<4.9
+mtcnn==0.1.1
+deepface==0.0.97
+Pillow>=10.2.0
+
+# TensorFlow Stack (required for deepface/retinaface)
+# IMPORTANT: Install these together to avoid conflicts
+# tf-keras 2.20.1 requires tensorflow>=2.20.0,<2.21
+# deepface 0.0.97 requires tensorflow>=1.9.0
+tensorflow==2.20.0
+tf-keras==2.20.1
+
+# NLP
+spacy==3.7.4
+nltk==3.8.1
+transformers==4.37.2
+huggingface-hub==0.20.3
+tokenizers==0.15.2
+sentencepiece==0.1.99
+safetensors==0.4.2
+
+# Data Processing
+pandas==2.0.3
+scikit-learn==1.3.2
+
+# Video Processing
+moviepy>=2.0.0
+imageio-ffmpeg>=0.4.0
+
+# Utilities
+python-dotenv>=1.0.0
+aiofiles>=23.2.0
+jinja2>=3.1.0
+
+# Auth & Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+email-validator==2.1.0.post1
+
+# Database
+SQLAlchemy==2.0.27
+alembic==1.13.1
+
+# OpenAI
+# openai API evolves rapidly, use flexible versioning
+openai>=1.0.0
+
+# Reporting
+reportlab==4.1.0
+python-docx==1.1.0
+matplotlib==3.7.4
+seaborn==0.13.2
+
+# Dev / Test
+pytest==7.4.4
+pytest-asyncio==0.21.1
+gunicorn==21.2.0; platform_system!="Windows"
+
+# Optional (requires C++ Build Tools on Windows)
+# webrtcvad  # For advanced voice activity detection

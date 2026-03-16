@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face2Phrase - Report</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎤 Face2Phrase</h1>
+            <p class="subtitle">Communication Analysis Report</p>
+        </header>
+
+        <main>
+            <div class="report-header">
+                <div class="overall-score">
+                    <div class="score-circle">
+                        <div class="score-value">{{ report.overall_score }}</div>
+                        <div class="score-label">Overall Score</div>
+                    </div>
+                </div>
+                <div class="report-actions">
+                    <button class="action-btn" onclick="downloadReport()">
+                        <span class="btn-icon">📥</span>
+                        Download Report
+                    </button>
+                    <button class="action-btn" onclick="window.location.href='/'">
+                        <span class="btn-icon">🔄</span>
+                        New Analysis
+                    </button>
+                </div>
+            </div>
+
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-icon">🎤</div>
+                    <div class="metric-content">
+                        <h3>Voice Confidence</h3>
+                        <div class="metric-score">{{ report.voice_confidence }}</div>
+                        <div class="metric-details">
+                            <div class="detail-item">
+                                <span class="detail-label">Speaking Rate:</span>
+                                <span class="detail-value">{{ report.speaking_rate_wpm }} WPM</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Voice Breaks:</span>
+                                <span class="detail-value">{{ "%.1f"|format(report.voice_breaks_ratio * 100) }}%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-icon">🎭</div>
+                    <div class="metric-content">
+                        <h3>Facial Confidence</h3>
+                        <div class="metric-score">{{ report.facial_confidence }}</div>
+                        <div class="metric-details">
+                            <div class="detail-item">
+                                <span class="detail-label">Eye Contact:</span>
+                                <span class="detail-value">{{ "%.1f"|format(report.avg_eye_contact * 100) }}%</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Face Detection:</span>
+                                <span class="detail-value">{{ "%.1f"|format(report.face_detection_rate * 100) }}%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-icon">🧠</div>
+                    <div class="metric-content">
+                        <h3>Vocabulary Score</h3>
+                        <div class="metric-score">{{ report.vocabulary_score }}</div>
+                        <div class="metric-details">
+                            <div class="detail-item">
+                                <span class="detail-label">Richness:</span>
+                                <span class="detail-value">{{ "%.1f"|format(report.vocabulary_richness * 100) }}%</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Unique Words:</span>
+                                <span class="detail-value">{{ report.unique_words }}/{{ report.total_words }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-icon">🗣️</div>
+                    <div class="metric-content">
+                        <h3>Speech Clarity</h3>
+                        <div class="metric-score">{{ "%.1f"|format((1 - report.filler_word_ratio) * 100) }}</div>
+                        <div class="metric-details">
+                            <div class="detail-item">
+                                <span class="detail-label">Filler Words:</span>
+                                <span class="detail-value">{{ report.filler_word_count }}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Long Pauses:</span>
+                                <span class="detail-value">{{ report.long_pauses }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="charts-section">
+                <div class="chart-container">
+                    <h3>Emotion Distribution</h3>
+                    <canvas id="emotionChart"></canvas>
+                </div>
+            </div>
+
+            <div class="feedback-section">
+                <div class="feedback-card strengths">
+                    <h3>✅ Strengths</h3>
+                    <ul>
+                        {% for strength in report.strengths %}
+                        <li>{{ strength }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+
+                <div class="feedback-card improvements">
+                    <h3>📈 Areas for Improvement</h3>
+                    <ul>
+                        {% for improvement in report.improvements %}
+                        <li>{{ improvement }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+
+            <div class="transcript-section">
+                <h3>Transcript</h3>
+                <div class="transcript-content">
+                    {% if report.transcript %}
+                        <p>{{ report.transcript }}</p>
+                    {% else %}
+                        <p class="no-transcript">No transcript available</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="summary-section">
+                <h3>Summary</h3>
+                <div class="summary-content">
+                    {% if report.summary %}
+                        <p>{{ report.summary }}</p>
+                    {% else %}
+                        <p class="no-summary">No summary available</p>
+                    {% endif %}
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Face2Phrase - Privacy-friendly AI communication analysis</p>
+        </footer>
+    </div>
+
+    <script>
+        // Emotion distribution chart
+        const emotionData = {{ report.emotion_distribution | tojson }};
+        
+        if (Object.keys(emotionData).length > 0) {
+            const ctx = document.getElementById('emotionChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: Object.keys(emotionData),
+                    datasets: [{
+                        data: Object.values(emotionData),
+                        backgroundColor: [
+                            '#FF6384',
+                            '#36A2EB',
+                            '#FFCE56',
+                            '#4BC0C0',
+                            '#9966FF',
+                            '#FF9F40',
+                            '#FF6384'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+
+        function downloadReport() {
+            window.location.href = `/download/{{ report.session_id }}`;
+        }
+    </script>
+</body>
+</html>
